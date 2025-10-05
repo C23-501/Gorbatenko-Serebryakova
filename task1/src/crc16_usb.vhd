@@ -1,8 +1,15 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use ieee.math_real.all;
 
 entity crc16_usb is
+  generic (
+    POLY : std_logic_vector(15 downto 0) := x"A001";
+    INIT : std_logic_vector(15 downto 0) := x"FFFF";
+    PACKET_SIZE : natural := 64
+  );
+  
   port (
     clk     : in  std_logic;
     rst     : in  std_logic;
@@ -14,16 +21,22 @@ entity crc16_usb is
 end entity;
 
 architecture rtl of crc16_usb is
+  -- Функция для вычисления необходимого количества бит для счетчика
+  function log2(n : natural) return natural is
+  begin
+    if n <= 2 then
+      return 1;
+    else
+      return integer(ceil(log2(real(n))));
+    end if;
+  end function;
 
-  constant POLY    : std_logic_vector(15 downto 0) := x"A001";
-  constant INIT    : std_logic_vector(15 downto 0) := x"FFFF";
-  constant MAX_CNT : unsigned(5 downto 0) := to_unsigned(63, 6); -- 63 в unsigned
+  constant COUNTER_BITS : natural := log2(PACKET_SIZE);
 
-  signal bit_cnt   : unsigned(5 downto 0);
-  signal crc_reg   : std_logic_vector(15 downto 0);
-  signal done_reg  : std_logic;
-  signal enable_internal : std_logic;
-  signal feedback  : std_logic;
+  signal bit_cnt : unsigned(COUNTER_BITS-1 downto 0);
+  signal crc_reg     : std_logic_vector(15 downto 0);
+  signal done_reg    : std_logic;
+  signal feedback    : std_logic;
 
 begin
 
@@ -35,38 +48,31 @@ begin
       crc_reg   <= INIT;
       bit_cnt   <= (others => '0');
       done_reg  <= '0';
-      enable_internal <= '0';
     elsif rising_edge(clk) then
-      -- Управление внутренним enable
-      if enable = '1' then
-        enable_internal <= '1';
-      elsif bit_cnt = MAX_CNT then  -- Правильное сравнение
-        enable_internal <= '0';
-      end if;
-    
-      -- Обработка CRC
-      if enable_internal = '1' then
-        if feedback = '1' then
-          crc_reg <= ('0' & crc_reg(15 downto 1)) xor POLY;
-        else
-          crc_reg <= '0' & crc_reg(15 downto 1);
+      if done_reg = '0' then
+        if enable = '1' then
+          -- Вычисление CRC с произвольным полиномом
+          if feedback = '1' then
+            crc_reg <= ('0' & crc_reg(15 downto 1)) xor POLY;
+          else
+            crc_reg <= '0' & crc_reg(15 downto 1);
+          end if;
+          
+          -- Счетчик битов
+          if bit_cnt = PACKET_SIZE - 1 then
+            bit_cnt <= (others => '0');
+            done_reg <= '1';
+          else
+            bit_cnt <= bit_cnt + 1;
+          end if;
         end if;
-      end if;
-      
-      -- Счетчик битов
-      if enable_internal = '1' then
-        if bit_cnt = MAX_CNT then  -- Правильное сравнение
+      else
+        -- Автоперезапуск
+        if enable = '1' then
+          crc_reg     <= INIT;
           bit_cnt <= (others => '0');
-        else
-          bit_cnt <= bit_cnt + 1;
+          done_reg    <= '0';
         end if;
-      end if;
-      
-      -- Сигнал завершения
-      if enable_internal = '1' and bit_cnt = MAX_CNT then  -- Правильное сравнение
-        done_reg <= '1';
-      elsif enable = '1' then
-        done_reg <= '0';
       end if;
     end if;
   end process;
