@@ -81,7 +81,7 @@ architecture rtl of SdramFsm is
         -- READ_REQUEST_DATA_FIFO,
 
         WAIT_FOR_SPACE_IN_RESPONSE_DATA_FIFO,
-        REQUEST_SYNC_POINT,
+REQUEST_SYNC_POINT,
 
 -- external_state <= Activation
         ACTIVATE,
@@ -164,11 +164,45 @@ architecture rtl of SdramFsm is
     alias bank_addr      : std_logic_vector(1 downto 0)  is request_command_r(57 downto 56);
     alias row_addr       : std_logic_vector(11 downto 0) is request_command_r(55 downto 44);
     alias col_addr       : std_logic_vector(7 downto 0)  is request_command_r(43 downto 36);
-    alias data_len       : std_logic_vector(11 downto 0) is request_command_r(35 downto 24);
+    alias data64_len     : std_logic_vector(11 downto 0) is request_command_r(35 downto 24);
     alias be_first       : std_logic_vector(7 downto 0)  is request_command_r(23 downto 16);
     alias be_last        : std_logic_vector(7 downto 0)  is request_command_r(15 downto 8);
     alias operation_id   : std_logic_vector(7 downto 0)  is request_command_r(7 downto 0);
 
+    signal data64_counter : std_logic_vector(11 downto 0); -- Счетчик слов от Avalon
+
+
+
+    constant BURST_BITS : integer := BurstLength * DataWidth;
+    constant VEC64_NUM  : integer := ceil_div(BURST_BITS, 64);
+
+    type t_vec64_array is array (0 to NUM64-1) of std_logic_vector(63 downto 0);
+    signal buf64 : t_vec64_array;
+    
+    signal word64_counter : std_logic_vector(VEC64_NUM-1 downto 0); -- Счетчик 64 битных слов для загрузки в сдвиговый регистр
+    signal frag_counter   : std_logic_vector(7 downto 0);
+    
+    -------------------------------------------------------------------------
+    -- DATA PACKER (buf64[]) для 1 burst
+    -------------------------------------------------------------------------
+
+
+
+
+    signal start_new_cmd  : std_logic;
+    signal start_fill     : std_logic;
+    signal fill_active    : std_logic;
+    signal fill_done      : std_logic;
+
+    signal rem64_cnt      : unsigned(11 downto 0); -- сколько 64b слов ещё можно взять из FIFO по запросу
+
+    signal buf_idx        : integer range 0 to NUM64-1;
+    signal buf_bit        : integer range 0 to 63;
+    signal filled_bits    : integer range 0 to BURST_BITS;
+
+    signal fifo_cache       : std_logic_vector(63 downto 0);
+    signal fifo_cache_valid : std_logic;
+    signal fifo_bit_ptr     : integer range 0 to 63;
 
 begin
     --  Проверка generic
@@ -705,4 +739,12 @@ begin
             end if;
         end if;
     end process logic_proc;
+
+
+    packer_proc : process(clk, nRst)
+    begin
+        if nRst = '0' then
+             
+        elsif rising_edge(clk) then
+
 end rtl;

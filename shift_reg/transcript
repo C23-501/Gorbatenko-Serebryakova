@@ -33967,3 +33967,5 @@ run
 # sdramtoptb.U_SDRAM : at time 1344949.0 ns AREF : Auto Refresh
 # sdramtoptb.U_SDRAM : at time 1376374.0 ns AREF : Auto Refresh
 # sdramtoptb.U_SDRAM : at time 1407798.0 ns AREF : Auto Refresh
+# End time: 23:30:58 on Feb 12,2026, Elapsed time: 13:27:40
+# Errors: 0, Warnings: 1
