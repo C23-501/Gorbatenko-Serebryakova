@@ -19,7 +19,7 @@ ENTITY SdramSubsys IS
       nRst      : IN     std_logic;
       CLK       : IN     std_logic;
       -- Входы с FSM
-      StateFSM  : IN     StateFSM_type;
+      StateFSM  : IN     StateSdramFsm_type;
       A_FSM     : IN     std_logic_vector (11 DOWNTO 0);
       -- Выходы на арбитр
       nCS       : OUT    std_logic;
