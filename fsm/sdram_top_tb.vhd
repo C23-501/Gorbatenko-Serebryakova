@@ -5,10 +5,10 @@ use ieee.numeric_std.all;
 library work;
 use work.sdram_subsys_package.all;
 
-entity SdramFsmTb is
+entity SdramTopTb is
 end entity;
 
-architecture struct of SdramFsmTb is
+architecture struct of SdramTopTb is
 
     component SdramFsm
         generic (
@@ -56,7 +56,7 @@ architecture struct of SdramFsmTb is
         );
     end component;
 
-    component SdramFsmTester
+    component SdramTopTester
         port (
             nRst : out std_logic;
             clk  : out std_logic;
@@ -184,7 +184,7 @@ begin
             A    => A_s
         );
 
-    U_TESTER : SdramFsmTester
+    U_TESTER : SdramTopTester
         port map (
             nRst => nRst_s,
             clk  => clk_s,
