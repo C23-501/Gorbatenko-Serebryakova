@@ -16,8 +16,7 @@ entity SdramFsm is
         tWR_Cycles     : integer := 2;
         tRAS_Cycles    : integer := 7;
         tRP_Cycles     : integer := 2;
-        AddressWidth   : integer := 25;
-        UsedWidth      : integer := 10
+        AddressWidth   : integer := 25
     );
 
     port (
@@ -135,24 +134,28 @@ architecture rtl of SdramFsm is
             -- FIFO_FSM
 ------------------------------------------------------
 
+    signal request_data_rden_r : std_logic;
+    
     -- формируемый ответ-команда
     signal response_command_r : std_logic_vector(19 downto 0);
 
+
     -- формируемые выходные данные
     signal response_data_r    : std_logic_vector(63 downto 0);
+    signal response_data_wren_r : std_logic;
 
 ------------------------------------------------------
             -- COMMON
 ------------------------------------------------------
 
-    alias operation_type : std_logic                     is request_command_fifo_data(61);
-    alias bank_addr      : std_logic_vector(1 downto 0)  is request_command_fifo_data(57 downto 56);
-    alias row_addr       : std_logic_vector(11 downto 0) is request_command_fifo_data(55 downto 44);
-    alias col_addr       : std_logic_vector(7 downto 0)  is request_command_fifo_data(43 downto 36);
-    alias fifo_words     : std_logic_vector(11 downto 0) is request_command_fifo_data(35 downto 24);
-    alias be_first       : std_logic_vector(7 downto 0)  is request_command_fifo_data(23 downto 16);
-    alias be_last        : std_logic_vector(7 downto 0)  is request_command_fifo_data(15 downto 8);
-    alias operation_id   : std_logic_vector(7 downto 0)  is request_command_fifo_data(7 downto 0);
+    alias op_type    : std_logic                     is request_command_fifo_data(61);
+    alias bank_addr  : std_logic_vector(1 downto 0)  is request_command_fifo_data(57 downto 56);
+    alias row_addr   : std_logic_vector(11 downto 0) is request_command_fifo_data(55 downto 44);
+    alias col_addr   : std_logic_vector(7 downto 0)  is request_command_fifo_data(43 downto 36);
+    alias fifo_words : std_logic_vector(11 downto 0) is request_command_fifo_data(35 downto 24);
+    alias be_first   : std_logic_vector(7 downto 0)  is request_command_fifo_data(23 downto 16);
+    alias be_last    : std_logic_vector(7 downto 0)  is request_command_fifo_data(15 downto 8);
+    alias op_id      : std_logic_vector(7 downto 0)  is request_command_fifo_data(7 downto 0);
    
     -- Команда
     signal op_type_r    : std_logic;
@@ -237,7 +240,9 @@ begin
     
     request_data_fifo_rden     <= '0'; -- Пока что
     
-    response_command_fifo_wren <= '1' when fifo_fsm_state = WREN_RESPONSE_CMD_FIFO else '0';
+    response_command_fifo_wren <= '1' when (fifo_fsm_state = WREN_RESPONSE_CMD_FIFO and 
+                                            response_command_fifo_full='0') else '0';
+    -- response_command_fifo_wren <= '1' when fifo_fsm_state = WREN_RESPONSE_CMD_FIFO else '0';
     response_command_fifo_data <= response_command_r;
    
     response_data_fifo_wren    <= '0'; -- Пока что
@@ -594,7 +599,7 @@ begin
 ------------------------------------------------------
             
             if fifo_fsm_state = PREPARE_REQUEST then
-                op_type_r    <= operation_type;
+                op_type_r    <= op_type;
                 bank_addr_r  <= bank_addr;
                 row_addr_r   <= row_addr;
 
@@ -604,7 +609,7 @@ begin
                 fifo_words_r <= fifo_words;
                 be_first_r   <= be_first;
                 be_last_r    <= be_last;
-                op_id_r      <= operation_id;
+                op_id_r      <= op_id;
             end if;
 
         end if;

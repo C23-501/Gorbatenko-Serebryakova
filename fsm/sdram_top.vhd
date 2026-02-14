@@ -52,8 +52,7 @@ entity SdramTop is
         -- Response Data FIFO (запись)
         response_data_fifo_write_en : out std_logic;
         response_data_fifo_data     : out std_logic_vector(63 downto 0);
-		  response_data_fifo_full     : in std_logic;
-        response_data_fifo_used     : in  std_logic_vector(9 downto 0); -- UsedWidth-1 downto 0, по умолчанию UsedWidth = 10
+		response_data_fifo_full     : in std_logic;
 
         -- LEDs
         LED_ctr : out std_logic_vector(7 downto 0)
@@ -188,23 +187,22 @@ architecture rtl of SdramTop is
 
             -- Взаимодействие с Avalon / FIFO
             -- Чтение
-            request_command_fifo_read_en : out std_logic;
+            request_command_fifo_rden : out std_logic;
             request_command_fifo_data    : in  std_logic_vector(61 downto 0);
             request_command_fifo_empty   : in  std_logic;
 
-            request_data_fifo_read_en : out std_logic;
+            request_data_fifo_rden : out std_logic;
             request_data_fifo_data    : in  std_logic_vector(63 downto 0);
             request_data_fifo_empty   : in  std_logic;
 
             -- Запись
-            response_command_fifo_write_en : out std_logic;
+            response_command_fifo_wren : out std_logic;
             response_command_fifo_data     : out std_logic_vector(19 downto 0);
             response_command_fifo_full     : in  std_logic;
 
-            response_data_fifo_write_en : out std_logic;
+            response_data_fifo_wren : out std_logic;
             response_data_fifo_data     : out std_logic_vector(63 downto 0);
-				response_data_fifo_full     : in  std_logic;
-            response_data_fifo_used     : in  std_logic_vector(9 downto 0);
+			response_data_fifo_full     : in  std_logic;
 
             -- Выходы на арбитр SDRAM
             nCS  : out std_logic;
@@ -262,22 +260,21 @@ begin
             state_fsm    => StateFSM,
 
             -- FIFO-интерфейсы наружу
-            request_command_fifo_read_en => request_command_fifo_read_en,
+            request_command_fifo_rden => request_command_fifo_read_en,
             request_command_fifo_data    => request_command_fifo_data,
             request_command_fifo_empty   => request_command_fifo_empty,
 
-            request_data_fifo_read_en => request_data_fifo_read_en,
+            request_data_fifo_rden => request_data_fifo_read_en,
             request_data_fifo_data    => request_data_fifo_data,
             request_data_fifo_empty   => request_data_fifo_empty,
 
-            response_command_fifo_write_en => response_command_fifo_write_en,
+            response_command_fifo_wren => response_command_fifo_write_en,
             response_command_fifo_data     => response_command_fifo_data,
             response_command_fifo_full     => response_command_fifo_full,
 
-            response_data_fifo_write_en => response_data_fifo_write_en,
+            response_data_fifo_wren => response_data_fifo_write_en,
             response_data_fifo_data     => response_data_fifo_data,
-				response_data_fifo_full     => response_data_fifo_full,
-            response_data_fifo_used     => response_data_fifo_used,
+			response_data_fifo_full     => response_data_fifo_full,
 
             -- Выходы на арбитр
             nCS  => nCS_FSM,
