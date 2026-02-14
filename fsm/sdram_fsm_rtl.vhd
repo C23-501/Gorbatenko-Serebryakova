@@ -214,9 +214,8 @@ begin
             -- TO SUBSYS
 ------------------------------------------------------
 
-    state_fsm <= Idle       when sdram_fsm_state = IDLE else
-
-                 Waiting    when sdram_fsm_state = NOP else
+    state_fsm <= Waiting    when (sdram_fsm_state = IDLE or
+                                  sdram_fsm_state = NOP) else
 
                  Activation when (sdram_fsm_state = ACTIVATE or
                                   sdram_fsm_state = WAIT_tRCD) else
@@ -229,8 +228,7 @@ begin
                   Writing   when (sdram_fsm_state = SET_WRITE or
                                   sdram_fsm_state = WRITING or
                                   sdram_fsm_state = WAIT_tWR or
-                                  (sdram_fsm_state = WAIT_tRAS and op_type_r = OP_WRITE)) else
-                  Idle;
+                                  (sdram_fsm_state = WAIT_tRAS and op_type_r = OP_WRITE));
 
 ------------------------------------------------------
             -- TO FIFO

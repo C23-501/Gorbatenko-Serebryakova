@@ -79,7 +79,7 @@ BEGIN
       BS_r <= (others => '0');
       A_r <= (others => '0');
     elsif (rising_edge(CLK)) then
-      if (StateFSM = Waiting or StateFSM = Idle) then
+      if (StateFSM = Waiting) then
         nCS_r <= nCS_Subsys;
         nRAS_r <= nRAS_Subsys;
         nCAS_r <= nCAS_Subsys;
