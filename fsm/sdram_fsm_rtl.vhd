@@ -66,6 +66,7 @@ architecture rtl of SdramFsm is
         IDLE,
 
         RDEN_REQUEST_CMD_FIFO,
+        WAIT_REQUEST_CMD_FIFO,
 
         PREPARE_REQUEST,
         
@@ -172,10 +173,11 @@ architecture rtl of SdramFsm is
     constant OP_WRITE  : std_logic := '1';
 
     signal op_active_r  : std_logic;
+    
+    constant BURST_BITS     : integer := DataWidth * BurstLength;
+    constant WORDS64_PER_TX : integer := (BURST_BITS + 63) / 64;
 
---    constant WORDS_PER_LOAD : integer := 64 / DataWidth;
---    constant BURST_BITS     : integer := DataWidth * BurstLength;
---    constant LOADS          : integer := (BURST_BITS + 63) / 64;
+
 --    constant LOADS_WIDTH    : integer := integer(floor(log2(real(LOADS)))) + 1;
 
 --    type t_load64_array is array (0 to LOADS-1) of std_logic_vector(63 downto 0);
@@ -450,7 +452,7 @@ begin
             elsif sdram_fsm_state = ACTIVATE then
                 tras_counter <= conv_std_logic_vector(TRAS_MAX-1, tras_counter'length);
             end if;
-        end if;
+        end if; 
     end process sdram_logic_proc;
 
 
