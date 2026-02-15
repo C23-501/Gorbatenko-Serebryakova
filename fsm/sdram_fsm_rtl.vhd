@@ -66,8 +66,6 @@ architecture rtl of SdramFsm is
         IDLE,
 
         RDEN_REQUEST_CMD_FIFO,
-        WAIT_REQUEST_CMD_FIFO,
-
         PREPARE_REQUEST,
         
         START_READ_OP,
@@ -79,7 +77,6 @@ architecture rtl of SdramFsm is
         WRITING,
 
         PREPARE_RESPONSE,
-
         WREN_RESPONSE_CMD_FIFO
     );
 
@@ -149,21 +146,21 @@ architecture rtl of SdramFsm is
             -- COMMON
 ------------------------------------------------------
 
-    alias op_type    : std_logic                     is request_command_fifo_data(61);
-    alias bank_addr  : std_logic_vector(1 downto 0)  is request_command_fifo_data(57 downto 56);
-    alias row_addr   : std_logic_vector(11 downto 0) is request_command_fifo_data(55 downto 44);
-    alias col_addr   : std_logic_vector(7 downto 0)  is request_command_fifo_data(43 downto 36);
-    alias fifo_words : std_logic_vector(11 downto 0) is request_command_fifo_data(35 downto 24);
-    alias be_first   : std_logic_vector(7 downto 0)  is request_command_fifo_data(23 downto 16);
-    alias be_last    : std_logic_vector(7 downto 0)  is request_command_fifo_data(15 downto 8);
-    alias op_id      : std_logic_vector(7 downto 0)  is request_command_fifo_data(7 downto 0);
+    alias op_type   : std_logic                     is request_command_fifo_data(61);
+    alias bank_addr : std_logic_vector(1 downto 0)  is request_command_fifo_data(57 downto 56);
+    alias row_addr  : std_logic_vector(11 downto 0) is request_command_fifo_data(55 downto 44);
+    alias col_addr  : std_logic_vector(7 downto 0)  is request_command_fifo_data(43 downto 36);
+    alias words64   : std_logic_vector(11 downto 0) is request_command_fifo_data(35 downto 24);
+    alias be_first  : std_logic_vector(7 downto 0)  is request_command_fifo_data(23 downto 16);
+    alias be_last   : std_logic_vector(7 downto 0)  is request_command_fifo_data(15 downto 8);
+    alias op_id     : std_logic_vector(7 downto 0)  is request_command_fifo_data(7 downto 0);
    
     -- Команда
     signal op_type_r    : std_logic;
     signal bank_addr_r  : std_logic_vector(1 downto 0);
     signal row_addr_r   : std_logic_vector(11 downto 0);
-    signal col_addr_r   : std_logic_vector(11 downto 0); -- на самом деле от 7 до 0
-    signal fifo_words_r : std_logic_vector(11 downto 0);
+    signal col_addr_r   : std_logic_vector(7 downto 0); -- на самом деле от 7 до 0
+    signal words64_r    : std_logic_vector(11 downto 0);
     signal be_first_r   : std_logic_vector(7 downto 0);
     signal be_last_r    : std_logic_vector(7 downto 0);
     signal op_id_r      : std_logic_vector(7 downto 0);
@@ -175,30 +172,33 @@ architecture rtl of SdramFsm is
     signal op_active_r  : std_logic;
     
     constant BURST_BITS     : integer := DataWidth * BurstLength;
-    constant WORDS64_PER_TX : integer := (BURST_BITS + 63) / 64;
-
-
---    constant LOADS_WIDTH    : integer := integer(floor(log2(real(LOADS)))) + 1;
-
---    type t_load64_array is array (0 to LOADS-1) of std_logic_vector(63 downto 0);
---    signal load_data_r : t_load64_array;
-
---    signal loads_counter : std_logic_vector(LOADS_WIDTH-1 downto 0);
---    signal loads_done    : std_logic;
-
+    constant WORDS64_PER_TRANSACTION : integer := (BURST_BITS + 63) / 64;
+    constant PARTS_PER_64  : integer := 64 / BURST_BITS; 
     
---    signal fifo_words_counter : std_logic_vector(11 downto 0);
+    constant WORDS64_PER_TRANSACTION_WIDTH : integer := integer(floor(log2(real(WORDS64_PER_TRANSACTION))));
 
-    -------------------------------------------------------------------
+    signal enable_counter    : std_logic_vector(WORDS64_PER_TRANSACTION_WIDTH downto 0);
+    
+    signal idx_parts_counter : std_logic_vector(2 downto 0);
+    signal parts_counter     : std_logic_vector(2 downto 0);
 
---    constant WORDS_PER_LOAD : integer := 64 / WORD_WIDTH;
---    constant LOADS          : integer := ceil(BURST_BITS / 64);
---    constant LOADS_WIDTH    :
+    signal idx_words_counter : std_logic_vector(3 downto 0);
     
-    
---    signal loads_counter : std_logic_vector(LOADS_WIDTH-1 downto 0);
---    signal mem_words_counter  : std_logic_vector(BurstLength-1 downto 0);
---    signal frag_counter  : std_logic_vector(2 downto 0);
+
+    signal words64_per_request_counter     : std_logic_vector(11 downto 0);
+    signal words64_per_transaction_counter : std_logic_vector(WORDS64_PER_TRANSACTION_WIDTH downto 0);
+
+    signal   load_done_r  : std_logic;
+    signal unload_done_r  : std_logic;
+    signal request_done_r : std_logic;
+
+    signal shift_r : std_logic;
+    signal load_r  : std_logic;
+
+    signal first_prepare_r       : std_logic;
+    signal first_load_r          : std_logic;
+    signal first_cycle_in_load_r : std_logic;
+
     --------------------------------------------------------------------
 
 begin
@@ -238,7 +238,9 @@ begin
 
     request_command_fifo_rden  <= '1' when fifo_fsm_state = RDEN_REQUEST_CMD_FIFO else '0';
     
-    request_data_fifo_rden     <= '0'; -- Пока что
+    request_data_fifo_rden     <= '1' when fifo_fsm_state = LOAD_SHIFT_REG and (first_load_done_r = '0' or 
+                                            enable_counter /= conv_std_logic_vector(0, enable_counter'length))
+                                            else '0';
     
     response_command_fifo_wren <= '1' when (fifo_fsm_state = WREN_RESPONSE_CMD_FIFO and 
                                             response_command_fifo_full='0') else '0';
@@ -269,7 +271,7 @@ begin
     
     BS   <= bank_addr_r;
     
-    A    <= row_addr_r when sdram_fsm_state = ACTIVATE else col_addr_r;
+    A    <= row_addr_r when sdram_fsm_state = ACTIVATE else ("0000" & col_addr_r);
 
 
     sdram_fsm_proc : process(clk, nRst)
@@ -479,13 +481,17 @@ begin
                     fifo_fsm_state <= PREPARE_REQUEST;
 
                 ------------------
-                -- PREPARE_REQUEST TODO
+                -- PREPARE_REQUEST TODO (LOGIC)
                 ------------------
                 when PREPARE_REQUEST =>
-                    if op_type = OP_READ then
-                        fifo_fsm_state <= START_READ_OP;
+                    if request_done_r = '1' then
+                        fifo_fsm_state <= PREPARE_RESPONSE;
                     else
-                        fifo_fsm_state <= LOAD_WRITE_SHIFT_REG;
+                        if op_type = OP_READ then
+                            fifo_fsm_state <= START_READ_OP;
+                        else
+                            fifo_fsm_state <= LOAD_WRITE_INIT;
+                        end if;
                     end if;
 
                 ------------------
@@ -499,20 +505,36 @@ begin
                 ------------------
                 when READING =>
                     if op_active_r = '0' then
-                        fifo_fsm_state <= UNLOAD_READ_SHIFT_REG;
+                        fifo_fsm_state <= UNLOAD_READ_INIT;
                     end if;
 
                 ------------------
-                -- UNLOAD_READ_SHIFT_REG TODO
+                -- UNLOAD_READ_INIT
+                ------------------
+                when UNLOAD_READ_INIT =>
+                    fifo_fsm_state <= UNLOAD_READ_SHIFT_REG;
+
+                ------------------
+                -- UNLOAD_READ_SHIFT_REG TODO (LOGIC)
                 ------------------
                 when UNLOAD_READ_SHIFT_REG =>
-                    fifo_fsm_state <= PREPARE_RESPONSE;
-               
+                    if unload_done_r = '1' then
+                        fifo_fsm_state <= PREPARE_REQUEST;
+                    end if;
+
                 ------------------
-                -- LOAD_WRITE_SHIFT_REG TODO
+                -- LOAD_READ_INIT
+                ------------------
+                when LOAD_READ_INIT =>
+                    fifo_fsm_state <= LOAD_WRITE_SHIFT_REG;
+
+                ------------------
+                -- LOAD_WRITE_SHIFT_REG TODO (LOGIC)
                 ------------------
                 when LOAD_WRITE_SHIFT_REG =>
-                    fifo_fsm_state <= START_WRITE_OP;
+                    if load_done_r = '1' then 
+                        fifo_fsm_state <= START_WRITE_OP;
+                    end if;
 
                 ------------------
                 -- START_WRITE_OP
@@ -525,7 +547,7 @@ begin
                 ------------------
                 when WRITING =>
                     if op_active_r = '0' then
-                        fifo_fsm_state <= PREPARE_RESPONSE;
+                        fifo_fsm_state <= PREPARE_REQUEST;
                     end if;
 
                 ------------------
@@ -568,49 +590,132 @@ begin
 
         elsif rising_edge(clk) then
 
-------------------------------------------------------
-            -- FROM AVALON
-------------------------------------------------------
-
-            -- TODO
-
-            -- request_data_rden_r 
-
-------------------------------------------------------
-            -- TO AVALON (CMD)
-------------------------------------------------------
-
-            if fifo_fsm_state = PREPARE_RESPONSE then
-                response_command_r(19 downto 8) <= fifo_words_r;
-                response_command_r(7 downto 0)  <= op_id_r;
+            ------------------
+            -- first_prepare_done_r
+            ------------------
+            if fifo_fsm_state = INIT then
+                first_prepare_done_r <= '0';
+            elsif fifo_fsm_state = PREPARE_REQUEST then
+                first_prepare_done_r <= '1';
             end if;
 
-------------------------------------------------------
-            -- TO AVALON (DATA)
-------------------------------------------------------
-
-            -- TODO
-
-            -- response_data_wren_r
-            -- response_data_r
-
-------------------------------------------------------
-            -- PREPARE_REQUEST 
-------------------------------------------------------
-            
+            ------------------
+            -- op_type_r
+            ------------------
             if fifo_fsm_state = PREPARE_REQUEST then
-                op_type_r    <= op_type;
-                bank_addr_r  <= bank_addr;
-                row_addr_r   <= row_addr;
-
-                col_addr_r <= (others => '0');
-                col_addr_r(7 downto 0) <= col_addr;
-
-                fifo_words_r <= fifo_words;
-                be_first_r   <= be_first;
-                be_last_r    <= be_last;
-                op_id_r      <= op_id;
+                op_type_r <= op_type;
             end if;
+
+            ------------------
+            -- bank_add_r 
+            ------------------
+            if fifo_fsm_state = PREPARE_REQUEST then
+                if first_prepare_done_r = '0' then
+                    bank_addr_r <= bank_addr;
+                else
+                    -- логика переставления адреса банка
+                end if;
+            end if;
+
+            ------------------
+            -- row_addr_r 
+            ------------------
+            if fifo_fsm_state = PREPARE_REQUEST then
+                if first_prepare_done_r = '0' then
+                    row_addr_r <= row_addr;
+                else
+                    -- логика переставления адреса строки
+                end if;
+            end if;
+
+            ------------------
+            -- col_addr_r 
+            ------------------
+            if fifo_fsm_state = PREPARE_REQUEST then
+                if first_prepare_done_r = '0' then
+                    col_addr_r <= col_addr;
+                else
+                    col_addr_r <= col_addr_r + conv_std_logic_vector(BurstLength, col_addr_r'length);
+                end if;
+            end if;
+
+            ------------------
+            -- words64_r
+            ------------------
+            if fifo_fsm_state = PREPARE_REQUEST then
+                words64_r <= words64;
+            end if;
+
+            ------------------
+            -- be_first_r
+            ------------------
+            if fifo_fsm_state = PREPARE_REQUEST then
+                be_first_r <= be_first;
+            end if;
+            
+            ------------------
+            -- be_last_r
+            ------------------
+            if fifo_fsm_state = PREPARE_REQUEST then
+                be_last_r <= be_last;
+            end if;
+
+            ------------------
+            -- op_id_r
+            ------------------
+            if fifo_fsm_state = PREPARE_REQUEST then
+                op_id_r <= op_id;
+            end if;
+
+
+
+            if fifo_fsm_state = PREPARE_REQUEST then
+                if first_prepare_r = '0' then
+                    words64_per_request_counter <= words64;
+                end if;
+            elsif 
+
+            if fifo_fsm_state = PREPARE_REQUEST then
+                if words64_per_request_counter <  conv_std_logic_vector(WORDS64_PER_TRANSACTION,  then 
+                words64_per_transaction_counter <= conv_std_logic_vector(WORDS64_PER_TRANSACTION-1, words64_per_transaction_counter'length);
+            elsif
+
+            if fifo_fsm_state = PREPARE_REQUEST then
+                if first_prepare_r = '1' then
+                    parts_counter <= conv_std_logic_vector(
+
+
+
+            ------------------
+            -- enable_counter
+            ------------------
+            if BURST_BITS < 64 then 
+                 
+            else
+
+            end if;
+
+            if fifo_fsm_state = IDLE then
+                first_load_done_r <= '0';
+            elsif fifo_fsm_state = LOAD_SHIFT_REG then
+                first_load_done_r <= '1';
+            end if;
+
+
+            if words64_per_request_counter = conv_std_logic_vector(0, words64_per_request_counter'length) then
+                request_done_r <= '1';
+            else
+                request_done_r <= '0';
+            end if;
+
+            if words64_per_transaction_counter = conv_std_logic_vector(0, words64_per_transaction_counter'length) then
+                load_done_r <= '1';
+            else
+                load_done_r <= '0';
+            end if;
+
+           
+
 
         end if;
     end process fifo_logic_proc;
