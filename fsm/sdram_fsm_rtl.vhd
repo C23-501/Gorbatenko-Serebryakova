@@ -12,7 +12,7 @@ entity SdramFsm is
         DataWidth      : integer := 16;
         tRCD_Cycles    : integer := 2;
         CAS_Latency    : integer := 3;
-        BurstLength    : integer := 8;
+        BurstLength    : integer := 4;
         tWR_Cycles     : integer := 2;
         tRAS_Cycles    : integer := 7;
         tRP_Cycles     : integer := 2;
@@ -48,15 +48,15 @@ entity SdramFsm is
         response_data_fifo_full     : in std_logic;
 
         -- Выходы на арбитр SDRAM
-        nCS  : out std_logic;
-        nRAS : out std_logic;
-        nCAS : out std_logic;
-        nWE  : out std_logic;
-        CKE  : out std_logic;
-        DQ   : out std_logic_vector(15 downto 0);
-        DQM  : out std_logic_vector(1 downto 0);
-        BS   : out std_logic_vector(1 downto 0);
-        A    : out std_logic_vector(11 downto 0)
+        nCS  : out   std_logic;
+        nRAS : out   std_logic;
+        nCAS : out   std_logic;
+        nWE  : out   std_logic;
+        CKE  : out   std_logic;
+        DQ   : inout std_logic_vector(15 downto 0);
+        DQM  : out   std_logic_vector(1 downto 0);
+        BS   : out   std_logic_vector(1 downto 0);
+        A    : out   std_logic_vector(11 downto 0)
     );
 end SdramFsm;
 
@@ -71,7 +71,8 @@ architecture rtl of SdramFsm is
         START_READ_OP,
         READING,
         UNLOAD_READ_SHIFT_REG,
-        
+       
+        RDEN_REQUEST_DATA_FIFO,
         LOAD_WRITE_SHIFT_REG,
         START_WRITE_OP,
         WRITING,
@@ -132,19 +133,23 @@ architecture rtl of SdramFsm is
             -- FIFO_FSM
 ------------------------------------------------------
 
+    signal request_command_rden_r : std_logic;
+
     signal request_data_rden_r : std_logic;
     
-    -- формируемый ответ-команда
+    signal response_command_wren_r : std_logic;
     signal response_command_r : std_logic_vector(19 downto 0);
 
 
-    -- формируемые выходные данные
+    -- signal response_data_wren_r : std_logic;
     signal response_data_r    : std_logic_vector(63 downto 0);
-    signal response_data_wren_r : std_logic;
 
 ------------------------------------------------------
             -- COMMON
 ------------------------------------------------------
+    -- Удобные константы
+    constant OP_READ   : std_logic := '0';
+    constant OP_WRITE  : std_logic := '1';
 
     alias op_type   : std_logic                     is request_command_fifo_data(61);
     alias bank_addr : std_logic_vector(1 downto 0)  is request_command_fifo_data(57 downto 56);
@@ -165,53 +170,64 @@ architecture rtl of SdramFsm is
     signal be_last_r    : std_logic_vector(7 downto 0);
     signal op_id_r      : std_logic_vector(7 downto 0);
 
-    -- Удобные константы
-    constant OP_READ   : std_logic := '0';
-    constant OP_WRITE  : std_logic := '1';
+    -- constant BURST_BITS : integer := DataWidth * BurstLength;
 
-    signal op_active_r  : std_logic;
+    signal sreg_load  : std_logic;
+    signal sreg_shift : std_logic;
     
-    constant BURST_BITS     : integer := DataWidth * BurstLength;
-    constant WORDS64_PER_TRANSACTION : integer := (BURST_BITS + 63) / 64;
-    constant PARTS_PER_64  : integer := 64 / BURST_BITS; 
+    signal sreg_idxPart : std_logic_vector(2 downto 0);
+    signal sreg_idxWord : std_logic_vector(3 downto 0);
     
-    constant WORDS64_PER_TRANSACTION_WIDTH : integer := integer(floor(log2(real(WORDS64_PER_TRANSACTION))));
-
-    signal enable_counter    : std_logic_vector(WORDS64_PER_TRANSACTION_WIDTH downto 0);
-    
-    signal idx_parts_counter : std_logic_vector(2 downto 0);
-    signal parts_counter     : std_logic_vector(2 downto 0);
-
-    signal idx_words_counter : std_logic_vector(3 downto 0);
-    
-
-    signal words64_per_request_counter     : std_logic_vector(11 downto 0);
-    signal words64_per_transaction_counter : std_logic_vector(WORDS64_PER_TRANSACTION_WIDTH downto 0);
-
-    signal   load_done_r  : std_logic;
-    signal unload_done_r  : std_logic;
     signal request_done_r : std_logic;
+    signal first_prepare_done_r : std_logic;
 
-    signal shift_r : std_logic;
-    signal load_r  : std_logic;
+    signal words64_counter : std_logic_vector(11 downto 0);
 
-    signal first_prepare_r       : std_logic;
-    signal first_load_r          : std_logic;
-    signal first_cycle_in_load_r : std_logic;
+    signal dq_in  : std_logic_vector(DataWidth-1 downto 0);
+    signal dq_out : std_logic_vector(DataWidth-1 downto 0);
+    signal dq_out_r : std_logic_vector(DataWidth-1 downto 0);
 
-    --------------------------------------------------------------------
+------------------------------------------------------
+            -- NOTIFY
+------------------------------------------------------
+    signal op_active_r  : std_logic;
 
 begin
+
+    assert(DataWidth * BurstLength = 64) report "DataWidth * BurstLength must be equal 64" severity error;
+
     --  Проверка generic
-    assert (DataWidth = 8 or DataWidth = 16 or DataWidth = 32 or DataWidth = 64)
-        report "Data width must be equal 8, 16, 32 or 64" severity error;
+--    assert (DataWidth = 8 or DataWidth = 16 or DataWidth = 32 or DataWidth = 64)
+--        report "Data width must be equal 8, 16, 32 or 64" severity error;
 
-    assert (BurstLength = 1 or BurstLength = 2 or BurstLength = 4 or BurstLength = 8 or BurstLength = 16)
-        report "Burst length must be equal 1, 2, 4, 8 or 16 (full page)" severity error;
+--    assert (BurstLength = 1 or BurstLength = 2 or BurstLength = 4 or BurstLength = 8 or BurstLength = 16)
+--        report "Burst length must be equal 1, 2, 4, 8 or 16 (full page)" severity error;
 
-    assert (CAS_Latency = 2 or CAS_Latency = 3)
-        report "CAS_Latency must be equal 2 or 3" severity error;
+--    assert (CAS_Latency = 2 or CAS_Latency = 3)
+--        report "CAS_Latency must be equal 2 or 3" severity error;
    
+
+    u_write_shift_reg : entity work.write_shift_reg
+        generic map (
+            WORD_WIDTH => DataWidth,
+            BURST      => BurstLength
+        )
+        port map (
+            Clk     => clk,
+            nRst    => nRst,
+
+            Load    => sreg_load,
+            Shift   => sreg_shift,
+
+            IdxPart => sreg_idxPart,
+            IdxWord => sreg_idxWord,
+
+            DataIn  => request_data_fifo_data,
+
+            WordOut => dq_out
+        );
+
+
 ------------------------------------------------------
             -- TO SUBSYS
 ------------------------------------------------------
@@ -236,15 +252,11 @@ begin
             -- TO FIFO
 ------------------------------------------------------
 
-    request_command_fifo_rden  <= '1' when fifo_fsm_state = RDEN_REQUEST_CMD_FIFO else '0';
+    request_command_fifo_rden  <= request_command_rden_r;
     
-    request_data_fifo_rden     <= '1' when fifo_fsm_state = LOAD_SHIFT_REG and (first_load_done_r = '0' or 
-                                            enable_counter /= conv_std_logic_vector(0, enable_counter'length))
-                                            else '0';
+    request_data_fifo_rden     <= request_data_rden_r;
     
-    response_command_fifo_wren <= '1' when (fifo_fsm_state = WREN_RESPONSE_CMD_FIFO and 
-                                            response_command_fifo_full='0') else '0';
-    -- response_command_fifo_wren <= '1' when fifo_fsm_state = WREN_RESPONSE_CMD_FIFO else '0';
+    response_command_fifo_wren <= response_command_wren_r;
     response_command_fifo_data <= response_command_r;
    
     response_data_fifo_wren    <= '0'; -- Пока что
@@ -265,7 +277,13 @@ begin
     
     CKE  <= '0' when sdram_fsm_state = IDLE else '1';
     
-    DQ   <= (others => '0') when sdram_fsm_state = IDLE else (others => 'Z');
+    DQ <= dq_out_r
+          when (sdram_fsm_state = SET_WRITE or
+                sdram_fsm_state = WRITING or
+                sdram_fsm_state = WAIT_tWR)
+          else (others => 'Z');
+
+    dq_in <= DQ;
     
     DQM  <= "00";
     
@@ -389,6 +407,8 @@ begin
             twr_counter   <= (others => '0');
             tras_counter  <= (others => '0');
 
+            sreg_shift <= '0';
+
         elsif rising_edge(Clk) then
 ------------------------------------------------------
             -- COUNTERS
@@ -427,7 +447,7 @@ begin
                 if burst_counter /= conv_std_logic_vector(0, burst_counter'length) then
                     burst_counter <= burst_counter - '1';
                 end if;
-            else -- if sdram_fsm_state = SET_WRITE or sdram_fsm_state = WAIT_CL then
+            else -- if sdram_fsm_state = SET_WRITE or sdram_fsm_state = SET_READ then
                 burst_counter <= conv_std_logic_vector(BURST_MAX-1, burst_counter'length);
             end if;
 
@@ -454,9 +474,33 @@ begin
             elsif sdram_fsm_state = ACTIVATE then
                 tras_counter <= conv_std_logic_vector(TRAS_MAX-1, tras_counter'length);
             end if;
+
+            ------------------
+            -- sreg_shift
+            ------------------
+            if sdram_fsm_state = SET_WRITE or sdram_fsm_state = WRITING then
+                sreg_shift <= '1';
+            else
+                sreg_shift <= '0';
+            end if;
         end if; 
     end process sdram_logic_proc;
 
+    process(clk, nRst)
+    begin
+        if nRst = '0' then
+            dq_out_r <= (others => '0');
+
+        elsif falling_edge(clk) then
+            -- Обновляем данные для записи
+            if sdram_fsm_state = SET_WRITE or
+               sdram_fsm_state = WRITING then
+
+                dq_out_r <= dq_out;
+
+            end if;
+        end if;
+    end process;
 
     fifo_fsm_proc : process(clk, nRst)
     begin
@@ -481,7 +525,7 @@ begin
                     fifo_fsm_state <= PREPARE_REQUEST;
 
                 ------------------
-                -- PREPARE_REQUEST TODO (LOGIC)
+                -- PREPARE_REQUEST
                 ------------------
                 when PREPARE_REQUEST =>
                     if request_done_r = '1' then
@@ -490,10 +534,15 @@ begin
                         if op_type = OP_READ then
                             fifo_fsm_state <= START_READ_OP;
                         else
-                            fifo_fsm_state <= LOAD_WRITE_INIT;
+                            if request_data_fifo_empty = '0' then
+                                fifo_fsm_state <= RDEN_REQUEST_DATA_FIFO;
+                            else
+                                fifo_fsm_state <= PREPARE_RESPONSE;
+                            end if;
                         end if;
                     end if;
 
+------------------------------------------------
                 ------------------
                 -- START_READ_OP
                 ------------------
@@ -505,36 +554,30 @@ begin
                 ------------------
                 when READING =>
                     if op_active_r = '0' then
-                        fifo_fsm_state <= UNLOAD_READ_INIT;
+                        fifo_fsm_state <= UNLOAD_READ_SHIFT_REG;
                     end if;
-
-                ------------------
-                -- UNLOAD_READ_INIT
-                ------------------
-                when UNLOAD_READ_INIT =>
-                    fifo_fsm_state <= UNLOAD_READ_SHIFT_REG;
 
                 ------------------
                 -- UNLOAD_READ_SHIFT_REG TODO (LOGIC)
                 ------------------
                 when UNLOAD_READ_SHIFT_REG =>
-                    if unload_done_r = '1' then
+                    if response_data_fifo_full = '0' then
                         fifo_fsm_state <= PREPARE_REQUEST;
                     end if;
+------------------------------------------------
 
+------------------------------------------------
                 ------------------
-                -- LOAD_READ_INIT
+                -- RDEN_REQUEST_DATA_FIFO
                 ------------------
-                when LOAD_READ_INIT =>
+                when RDEN_REQUEST_DATA_FIFO =>
                     fifo_fsm_state <= LOAD_WRITE_SHIFT_REG;
 
                 ------------------
                 -- LOAD_WRITE_SHIFT_REG TODO (LOGIC)
                 ------------------
                 when LOAD_WRITE_SHIFT_REG =>
-                    if load_done_r = '1' then 
-                        fifo_fsm_state <= START_WRITE_OP;
-                    end if;
+                    fifo_fsm_state <= START_WRITE_OP;
 
                 ------------------
                 -- START_WRITE_OP
@@ -549,12 +592,15 @@ begin
                     if op_active_r = '0' then
                         fifo_fsm_state <= PREPARE_REQUEST;
                     end if;
+------------------------------------------------
 
-                ------------------
+               ------------------
                 -- PREPARE_RESPONSE
                 ------------------
                 when PREPARE_RESPONSE =>
-                    fifo_fsm_state <= WREN_RESPONSE_CMD_FIFO;
+                    if response_command_fifo_full = '0' then
+                        fifo_fsm_state <= WREN_RESPONSE_CMD_FIFO;
+                    end if;
 
                 ------------------
                 -- WREN_RESPONSE_CMD_FIFO
@@ -572,38 +618,80 @@ begin
     begin
         if nRst = '0' then
             -- регистры
-            request_data_rden_r     <= '0';
+            request_command_rden_r <= '0';
+            
+            request_data_rden_r <= '0';
 
-            response_command_r      <= (others => '0');
+            response_command_wren_r <= '0';
+            response_command_r   <= (others => '0');
 
-            response_data_r         <= (others => '0');
-            response_data_wren_r    <= '0';
+            response_data_r      <= (others => '0');
     
             op_type_r    <= '0';
             bank_addr_r  <= (others => '0');
             row_addr_r   <= (others => '0');
             col_addr_r   <= (others => '0');
-            fifo_words_r <= (others => '0');
+            words64_r <= (others => '0');
             be_first_r   <= (others => '0');
             be_last_r    <= (others => '0');
             op_id_r      <= (others => '0');
 
+            sreg_load <= '0';
+            
+            sreg_idxPart <= (others => '0');
+            sreg_idxWord <= (others => '0');
+
+            request_done_r <= '0';
+            first_prepare_done_r <= '0';
+
+            words64_counter <= (others => '0');
+
         elsif rising_edge(clk) then
 
             ------------------
-            -- first_prepare_done_r
+            -- request_command_rden_r
             ------------------
-            if fifo_fsm_state = INIT then
-                first_prepare_done_r <= '0';
-            elsif fifo_fsm_state = PREPARE_REQUEST then
-                first_prepare_done_r <= '1';
+            if fifo_fsm_state = IDLE and request_command_fifo_empty = '0' then
+                request_command_rden_r <= '1';
+            else
+                request_command_rden_r <= '0';
             end if;
+
+            ------------------
+            -- request_data_rden_r
+            ------------------
+            if fifo_fsm_state = PREPARE_REQUEST and request_done_r = '0' and 
+               op_type = OP_WRITE and request_data_fifo_empty = '0' then
+                request_data_rden_r <= '1';
+            else
+                request_data_rden_r <= '0';
+            end if;
+    
+            ------------------
+            -- response_command_wren_r
+            ------------------
+            if fifo_fsm_state = PREPARE_RESPONSE and response_command_fifo_full = '0' then
+                response_command_wren_r <= '1';
+            else
+                response_command_wren_r <= '0';
+            end if;
+
+            ------------------
+            -- response_command_r
+            ------------------
+            if fifo_fsm_state = PREPARE_RESPONSE then
+                response_command_r(19 downto 8) <= words64_r;
+                response_command_r(7  downto 0) <= op_id_r;
+            end if;
+            
 
             ------------------
             -- op_type_r
             ------------------
             if fifo_fsm_state = PREPARE_REQUEST then
-                op_type_r <= op_type;
+                if first_prepare_done_r = '0' then
+                    op_type_r <= op_type;
+                end if;
             end if;
 
             ------------------
@@ -643,79 +731,81 @@ begin
             -- words64_r
             ------------------
             if fifo_fsm_state = PREPARE_REQUEST then
-                words64_r <= words64;
+                if first_prepare_done_r = '0' then
+                    words64_r <= words64;
+                elsif request_done_r = '0' and op_type = OP_WRITE and
+                      request_data_fifo_empty = '1' then
+                    words64_r <= conv_std_logic_vector(0, words64_r'length);
+                end if;
             end if;
 
             ------------------
             -- be_first_r
             ------------------
             if fifo_fsm_state = PREPARE_REQUEST then
-                be_first_r <= be_first;
+                if first_prepare_done_r = '0' then
+                    be_first_r <= be_first;
+                end if;
             end if;
             
             ------------------
             -- be_last_r
             ------------------
             if fifo_fsm_state = PREPARE_REQUEST then
-                be_last_r <= be_last;
+                if first_prepare_done_r = '0' then
+                    be_last_r <= be_last;
+                end if;
             end if;
 
             ------------------
             -- op_id_r
             ------------------
             if fifo_fsm_state = PREPARE_REQUEST then
-                op_id_r <= op_id;
-            end if;
-
-
-
-            if fifo_fsm_state = PREPARE_REQUEST then
-                if first_prepare_r = '0' then
-                    words64_per_request_counter <= words64;
+                if first_prepare_done_r = '0' then
+                    op_id_r <= op_id;
                 end if;
-            elsif 
-
-            if fifo_fsm_state = PREPARE_REQUEST then
-                if words64_per_request_counter <  conv_std_logic_vector(WORDS64_PER_TRANSACTION,  then 
-                words64_per_transaction_counter <= conv_std_logic_vector(WORDS64_PER_TRANSACTION-1, words64_per_transaction_counter'length);
-            elsif
-
-            if fifo_fsm_state = PREPARE_REQUEST then
-                if first_prepare_r = '1' then
-                    parts_counter <= conv_std_logic_vector(
-
-
-
+            end if;
+            
             ------------------
-            -- enable_counter
+            -- sreg_load
             ------------------
-            if BURST_BITS < 64 then 
-                 
+            if fifo_fsm_state = RDEN_REQUEST_DATA_FIFO then
+                sreg_load <= '1';
             else
-
+                sreg_load <= '0';
             end if;
 
-            if fifo_fsm_state = IDLE then
-                first_load_done_r <= '0';
-            elsif fifo_fsm_state = LOAD_SHIFT_REG then
-                first_load_done_r <= '1';
-            end if;
-
-
-            if words64_per_request_counter = conv_std_logic_vector(0, words64_per_request_counter'length) then
+            ------------------
+            -- request_done_r
+            ------------------
+            if fifo_fsm_state = WRITING and op_active_r = '0' and 
+            words64_counter = conv_std_logic_vector(0, words64_counter'length) then
                 request_done_r <= '1';
             else
                 request_done_r <= '0';
             end if;
 
-            if words64_per_transaction_counter = conv_std_logic_vector(0, words64_per_transaction_counter'length) then
-                load_done_r <= '1';
-            else
-                load_done_r <= '0';
+            ------------------
+            -- first_prepare_done_r
+            ------------------
+            if fifo_fsm_state = IDLE then
+                first_prepare_done_r <= '0';
+            elsif fifo_fsm_state = PREPARE_REQUEST then
+                first_prepare_done_r <= '1';
             end if;
 
-           
-
+            ------------------
+            -- words64_counter
+            ------------------
+            if fifo_fsm_state = PREPARE_REQUEST then
+                if first_prepare_done_r = '0' then
+                    words64_counter <= words64;
+                end if;
+            elsif fifo_fsm_state = LOAD_WRITE_SHIFT_REG then
+                if words64_counter /= conv_std_logic_vector(0, words64_counter'length) then
+                    words64_counter <= words64_counter - 1;
+                end if;
+            end if;
 
         end if;
     end process fifo_logic_proc;

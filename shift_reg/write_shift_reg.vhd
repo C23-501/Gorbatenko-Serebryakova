@@ -5,8 +5,8 @@ use ieee.std_logic_unsigned.all;
 
 entity write_shift_reg is
     generic (
-        WORD_WIDTH : integer := 16;
-        BURST      : integer := 4
+        WORD_WIDTH : integer := 16; -- 8, 16, 32, 64
+        BURST      : integer := 4   -- 1, 2, 4, 8, 16
     );
     port (
         Clk     : in  std_logic;
@@ -15,122 +15,83 @@ entity write_shift_reg is
         Load    : in  std_logic;
         Shift   : in  std_logic;
 
-        idx_offset : in std_logic_vector(2 downto 0); -- 0 .. 7
-        idx_words  : in std_logic_vector(3 downto 0); -- 0 .. 15
+        IdxPart : in  std_logic_vector(2 downto 0);
+        IdxWord : in  std_logic_vector(3 downto 0);
+
         DataIn  : in  std_logic_vector(63 downto 0);
 
-        WordOut : out std_logic_vector(WORD_WIDTH-1 downto 0);
-        Done    : out std_logic
+        WordOut : out std_logic_vector(WORD_WIDTH-1 downto 0)
     );
 end entity;
 
 architecture rtl of write_shift_reg is
 
-    type t_sreg_data is array (0 to BURST-1) of std_logic_vector(WORD_WIDTH-1 downto 0);
+    type t_sreg_data is array (0 to BURST-1)
+        of std_logic_vector(WORD_WIDTH-1 downto 0);
 
-    signal r_data : t_sreg_data;
+    signal r_data   : t_sreg_data;
 
-    constant BURST_BITS    : integer := WORD_WIDTH * BURST;
-    constant BYTES_PER_W   : integer := WORD_WIDTH / 8;
-    constant WORDS_PER_64  : integer := 64 / WORD_WIDTH;
+    constant BURST_BITS   : integer := WORD_WIDTH * BURST;
+    constant W64_PER_BURST : integer := BURST_BITS / 64;
+    constant BURST_PER_W64 : integer := 64 / BURST_BITS;
+    constant WORDS_PER_W64 : integer := 64 / WORD_WIDTH;
 
 begin
 
     WordOut <= r_data(0);
-    Enable  <= r_enable(0);
 
     p_sreg : process(Clk, nRst)
     begin
         if nRst = '0' then
-            for i in 0 to BURST-1 loop
-                r_data(i) <= (others => '0');
+            for j in 0 to BURST-1 loop
+                r_data(j)   <= (others => '0');
             end loop;
 
         elsif rising_edge(Clk) then
+
             if Shift = '1' then
-                for i in 0 to BURST-2 loop
-                    r_data(i) <= r_data(i+1);
+                for j in 0 to BURST-2 loop
+                    r_data(j)   <= r_data(j+1);
                 end loop;
-                r_data(BURST-1) <= (others => '0');
+
+                r_data(BURST-1)   <= (others => '0');
 
             elsif Load = '1' then
-                for i in 0 to BURST-1 loop
-                    r_data(i) <= DataIn((i+1)*WORD_WIDTH-1 downto i*WORD_WIDTH);
-                end loop;
-
-
 
                 if BURST_BITS <= 64 then
-
-                    for i in 0 to BURST-1 loop
-
-                        if ((conv_integer(Idx)*BURST + i + 1) * WORD_WIDTH) <= 64 then
-
-                            r_data(i) <= DataIn(
-                                ((conv_integer(Idx)*BURST + i + 1) * WORD_WIDTH - 1) downto
-                                ((conv_integer(Idx)*BURST + i)     * WORD_WIDTH)
+                    if conv_integer(IdxPart) < BURST_PER_W64 then
+                        for j in 0 to BURST-1 loop
+                            r_data(j) <= DataIn(
+                                ((conv_integer(IdxPart) * BURST + j + 1) * WORD_WIDTH - 1)
+                                downto
+                                ((conv_integer(IdxPart) * BURST + j) * WORD_WIDTH)
                             );
+                        end loop;
+                    else
+                        for j in 0 to BURST-1 loop
+                            r_data(j)   <= (others => '0');
+                        end loop;
+                    end if;
 
-
-                        else
-                            r_data(i)   <= (others => '0');
-                            r_enable(i) <= '0';
-                        end if;
-
-                    end loop;
-
-                else
-
-                    for i in 0 to BURST-1 loop
-
-
-                        if i < WORDS_PER_64 then
-
-                            r_data(i) <= DataIn(
-                                ((i+1) * WORD_WIDTH - 1) downto
-                                (i * WORD_WIDTH)
-                            );
-
-                            if BYTES_PER_W = 1 then
-
-                                r_enable(i) <=
-                                    ByteEn((i * WORD_WIDTH) / 8);
-
-                            elsif BYTES_PER_W = 2 then
-
-                                r_enable(i) <=
-                                    ByteEn(((i * WORD_WIDTH) / 8) + 0) or
-                                    ByteEn(((i * WORD_WIDTH) / 8) + 1);
-
-                            elsif BYTES_PER_W = 4 then
-
-                                r_enable(i) <=
-                                    ByteEn(((i * WORD_WIDTH) / 8) + 0) or
-                                    ByteEn(((i * WORD_WIDTH) / 8) + 1) or
-                                    ByteEn(((i * WORD_WIDTH) / 8) + 2) or
-                                    ByteEn(((i * WORD_WIDTH) / 8) + 3);
-
-                            else
-
-                                r_enable(i) <=
-                                    ByteEn(0) or ByteEn(1) or ByteEn(2) or ByteEn(3) or
-                                    ByteEn(4) or ByteEn(5) or ByteEn(6) or ByteEn(7);
-
-                            end if;
-
-                        else
-                            r_data(i)   <= (others => '0');
-                            r_enable(i) <= '0';
-                        end if;
-
-                    end loop;
-
+                else -- BURST_BITS > 64
+                    if conv_integer(IdxWord) < W64_PER_BURST then
+                        for j in 0 to WORDS_PER_W64-1 loop
+                                r_data(conv_integer(IdxWord)*WORDS_PER_W64 + j) 
+                                <= DataIn(
+                                    ((j + 1) * WORD_WIDTH  - 1)
+                                    downto
+                                    (j * WORD_WIDTH)
+                                );
+                        end loop;
+                    else
+                        for j in 0 to BURST-1 loop
+                            r_data(j)   <= (others => '0');
+                        end loop;
+                    end if;
                 end if;
 
             end if;
-
         end if;
-
     end process;
 
 end architecture;
