@@ -10,7 +10,7 @@ USE work.sdram_subsys_package.ALL;
 
 ENTITY SdramSubsys IS
    GENERIC( 
-      Burst_length : integer := 8;
+      Burst_length : integer := 4;
       CAS_Latency  : integer := 3;
       CLK_Freq_MHz : integer := 160
    );
