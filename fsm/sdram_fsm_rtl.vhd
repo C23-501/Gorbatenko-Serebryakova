@@ -771,8 +771,8 @@ begin
             if fifo_fsm_state = PREPARE_REQUEST then
                 if first_prepare_done_r = '0' then
                     bank_addr_r <= bank_addr;
-                else
-                    -- логика переставления адреса банка
+                elsif row_addr_r + conv_std_logic_vector(1, row_addr_r'length) < row_addr_r then
+                    bank_addr_r <= bank_addr_r + 1;
                 end if;
             end if;
 
@@ -782,8 +782,8 @@ begin
             if fifo_fsm_state = PREPARE_REQUEST then
                 if first_prepare_done_r = '0' then
                     row_addr_r <= row_addr;
-                else
-                    -- логика переставления адреса строки
+                elsif col_addr_r + conv_std_logic_vector(BurstLength, col_addr_r'length) < col_addr_r then
+                    row_addr_r <= row_addr_r + 1;
                 end if;
             end if;
 

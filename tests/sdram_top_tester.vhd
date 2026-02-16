@@ -79,13 +79,13 @@ architecture flow of SdramTopTester is
     end function;
 
     constant CMD_WRITE1 : std_logic_vector(61 downto 0) := make_cmd(
-        '1', "00", std_logic_vector(to_unsigned(3, 12)), x"20",
+        '1', "11", std_logic_vector(to_unsigned(4095, 12)), x"FC",
         std_logic_vector(to_unsigned(4, 12)),
         x"FF", x"FF", x"10"
     );
 
     constant CMD_READ1 : std_logic_vector(61 downto 0) := make_cmd(
-        '0', "00", std_logic_vector(to_unsigned(3, 12)), x"20",
+        '0', "11", std_logic_vector(to_unsigned(4095, 12)), x"FC",
         std_logic_vector(to_unsigned(4, 12)),
         x"FF", x"FF", x"11"
     );
@@ -96,19 +96,19 @@ architecture flow of SdramTopTester is
 
     type t_data_mem is array (0 to 3) of std_logic_vector(63 downto 0);
 
-    constant DATAQ : t_data_mem := (
-        x"0000000000000001",
-        x"0000000000000002",
-        x"0000000000000003",
-        x"0000000000000004"
-    );
-
 --    constant DATAQ : t_data_mem := (
---      x"1122334455667788",
---      x"99AABBCCDDEEFF00",
---      x"0123456789ABCDEF",
---      x"FEDCBA9876543210"
+--        x"0000000000000001",
+--        x"0000000000000002",
+--        x"0000000000000003",
+--        x"0000000000000004"
 --    );
+
+    constant DATAQ : t_data_mem := (
+      x"1122334455667788",
+      x"99AABBCCDDEEFF00",
+      x"0123456789ABCDEF",
+      x"FEDCBA9876543210"
+    );
 
     signal data_idx : integer range 0 to 4 := 0;
 
