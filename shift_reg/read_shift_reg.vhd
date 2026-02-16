@@ -17,9 +17,7 @@ entity read_shift_reg is
 
     DataIn   : in  std_logic_vector(WORD_WIDTH-1 downto 0);
 
-    DataOut  : out std_logic_vector(63 downto 0);
-    Valid    : out std_logic;
-    Done     : out std_logic
+    DataOut  : out std_logic_vector(63 downto 0)
   );
 end entity;
 
@@ -57,20 +55,6 @@ begin
   pad_hi : if WORDS_PER_64*WORD_WIDTH < 64 generate
     DataOut(63 downto WORDS_PER_64*WORD_WIDTH) <= (others => '0');
   end generate;
-
-  Valid <=
-    '1' when (
-      (FRAG_BITS >= 64  and conv_integer(r_word_cnt) >= WORDS_PER_64) or
-      (FRAG_BITS <  64  and conv_integer(r_word_cnt) = BURST)
-    ) else '0';
-
-  Done <=
-    '1' when (
-      Shift = '1' and (
-        (FRAG_BITS >= 64 and conv_integer(r_word_cnt) = WORDS_PER_64) or
-        (FRAG_BITS <  64 and conv_integer(r_word_cnt) = BURST)
-      )
-    ) else '0';
 
   p_sreg : process(Clk, nRst)
   begin

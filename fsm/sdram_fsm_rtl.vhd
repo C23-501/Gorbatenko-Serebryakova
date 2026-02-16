@@ -175,11 +175,14 @@ architecture rtl of SdramFsm is
 
     -- constant BURST_BITS : integer := DataWidth * BurstLength;
 
-    signal sreg_load  : std_logic;
-    signal sreg_shift : std_logic;
+    signal write_sreg_load  : std_logic;
+    signal write_sreg_shift : std_logic;
+
+    signal write_sreg_idxPart : std_logic_vector(2 downto 0);
+    signal write_sreg_idxWord : std_logic_vector(3 downto 0);
     
-    signal sreg_idxPart : std_logic_vector(2 downto 0);
-    signal sreg_idxWord : std_logic_vector(3 downto 0);
+    signal read_sreg_load  : std_logic;
+    signal read_sreg_shift : std_logic;
     
     signal request_done_r : std_logic;
     signal first_prepare_done_r : std_logic;
@@ -189,6 +192,8 @@ architecture rtl of SdramFsm is
     signal dq_in  : std_logic_vector(DataWidth-1 downto 0);
     signal dq_out : std_logic_vector(DataWidth-1 downto 0);
     signal dq_out_r : std_logic_vector(DataWidth-1 downto 0);
+
+    signal resp_data_reg : std_logic_vector(63 downto 0);
 
 ------------------------------------------------------
             -- NOTIFY
@@ -219,15 +224,32 @@ begin
             Clk     => clk,
             nRst    => nRst,
 
-            Load    => sreg_load,
-            Shift   => sreg_shift,
+            Load    => write_sreg_load,
+            Shift   => write_sreg_shift,
 
-            IdxPart => sreg_idxPart,
-            IdxWord => sreg_idxWord,
+            IdxPart => write_sreg_idxPart,
+            IdxWord => write_sreg_idxWord,
 
             DataIn  => request_data_fifo_data,
 
             WordOut => dq_out
+        );
+
+    u_read_shift_reg : entity work.read_shift_reg
+        generic map (
+            WORD_WIDTH => DataWidth,
+            BURST      => BurstLength
+        )
+        port map (
+            Clk     => clk,
+            nRst    => nRst,
+
+            Load    => read_sreg_load,
+            Shift   => read_sreg_shift,
+
+            DataIn  => dq_in,
+
+            DataOut => resp_data_reg
         );
 
 
@@ -293,6 +315,9 @@ begin
     BS   <= bank_addr_r;
     
     A    <= row_addr_r when sdram_fsm_state = ACTIVATE else ("0000" & col_addr_r);
+
+    read_sreg_load <= '1' when (sdram_fsm_state = READING) else '0';
+    write_sreg_shift <= '1' when (sdram_fsm_state = WRITING) else '0';
 
 
     sdram_fsm_proc : process(clk, nRst)
@@ -410,7 +435,7 @@ begin
             twr_counter   <= (others => '0');
             tras_counter  <= (others => '0');
 
-            sreg_shift <= '0';
+--            write_sreg_shift <= '0';
 
         elsif rising_edge(Clk) then
 ------------------------------------------------------
@@ -479,13 +504,22 @@ begin
             end if;
 
             ------------------
-            -- sreg_shift
+            -- write_sreg_shift
             ------------------
-            if sdram_fsm_state = SET_WRITE or sdram_fsm_state = WRITING then
-                sreg_shift <= '1';
-            else
-                sreg_shift <= '0';
-            end if;
+--            if sdram_fsm_state = SET_WRITE or sdram_fsm_state = WRITING then
+--                write_sreg_shift <= '1';
+--            else
+--                write_sreg_shift <= '0';
+--            end if;
+
+            ------------------
+            -- read_sreg_shift
+            ------------------
+--            if sdram_fsm_state = WAIT_CL and READING then
+--                read_sreg_load <= '1';
+--            else
+--                read_sreg_load <= '0';
+--            end if;
         end if; 
     end process sdram_logic_proc;
 
@@ -561,12 +595,19 @@ begin
                     end if;
 
                 ------------------
-                -- UNLOAD_READ_SHIFT_REG TODO (LOGIC)
+                -- UNLOAD_READ_SHIFT_REG
                 ------------------
                 when UNLOAD_READ_SHIFT_REG =>
                     if response_data_fifo_full = '0' then
-                        fifo_fsm_state <= DECREMENT_WORDS64_COUNTER;
+                        fifo_fsm_state <= WREN_RESPONSE_DATA_FIFO;
                     end if;
+
+                ------------------
+                -- WREN_RESPONSE_DATA_FIFO
+                ------------------
+                when WREN_RESPONSE_DATA_FIFO =>
+                    fifo_fsm_state <= DECREMENT_WORDS64_COUNTER;
+
 ------------------------------------------------
 
 ------------------------------------------------
@@ -613,14 +654,6 @@ begin
                 -- PREPARE_RESPONSE
                 ------------------
                 when PREPARE_RESPONSE =>
-                    if response_data_fifo_full = '0' then
-                        fifo_fsm_state <= WREN_RESPONSE_DATA_FIFO;
-                    end if;
-
-                ------------------
-                -- WREN_RESPONSE_DATA_FIFO
-                ------------------
-                when WREN_RESPONSE_DATA_FIFO =>
                     if response_command_fifo_full = '0' then
                         fifo_fsm_state <= WREN_RESPONSE_CMD_FIFO;
                     end if;
@@ -647,8 +680,8 @@ begin
             response_command_wren_r <= '0';
             response_command_r   <= (others => '0');
 
-            response_data_r      <= (others => '0');
-    
+            response_data_r <= (others => '0');
+
             op_type_r    <= '0';
             bank_addr_r  <= (others => '0');
             row_addr_r   <= (others => '0');
@@ -658,10 +691,11 @@ begin
             be_last_r    <= (others => '0');
             op_id_r      <= (others => '0');
 
-            sreg_load <= '0';
-            
-            sreg_idxPart <= (others => '0');
-            sreg_idxWord <= (others => '0');
+            write_sreg_load <= '0';
+            read_sreg_shift <= '0';
+
+            write_sreg_idxPart <= (others => '0');
+            write_sreg_idxWord <= (others => '0');
 
             request_done_r <= '0';
             first_prepare_done_r <= '0';
@@ -692,7 +726,7 @@ begin
             ------------------
             -- response_command_wren_r
             ------------------
-            if fifo_fsm_state = WREN_RESPONSE_DATA_FIFO and response_command_fifo_full = '0' then
+            if fifo_fsm_state = PREPARE_RESPONSE and response_command_fifo_full = '0' then
                 response_command_wren_r <= '1';
             else
                 response_command_wren_r <= '0';
@@ -701,7 +735,7 @@ begin
             ------------------
             -- response_command_r
             ------------------
-            if fifo_fsm_state = prepare_response then
+            if fifo_fsm_state = PREPARE_RESPONSE then
                 response_command_r(19 downto 8) <= words64_r;
                 response_command_r(7  downto 0) <= op_id_r;
             end if;
@@ -709,7 +743,7 @@ begin
             ------------------
             -- response_data_wren_r
             ------------------
-            if fifo_fsm_state = PREPARE_RESPONSE and response_data_fifo_full = '0' then
+            if fifo_fsm_state = UNLOAD_READ_SHIFT_REG and response_data_fifo_full = '0' then
                 response_data_wren_r <= '1';
             else
                 response_data_wren_r <= '0';
@@ -718,9 +752,9 @@ begin
             ------------------
             -- response_data_r
             ------------------
---            if fifo_fsm_state = prepare_response then
-                --
---            end if;            
+            if fifo_fsm_state = UNLOAD_READ_SHIFT_REG then
+                response_data_r <= resp_data_reg;
+            end if;            
 
             ------------------
             -- op_type_r
@@ -804,12 +838,21 @@ begin
             end if;
             
             ------------------
-            -- sreg_load
+            -- write_sreg_load
             ------------------
             if fifo_fsm_state = RDEN_REQUEST_DATA_FIFO then
-                sreg_load <= '1';
+                write_sreg_load <= '1';
             else
-                sreg_load <= '0';
+                write_sreg_load <= '0';
+            end if;
+
+            ------------------
+            -- read_sreg_shift
+            ------------------
+            if fifo_fsm_state = READING and op_active_r = '0' then
+                read_sreg_shift <= '1';
+            else
+                read_sreg_shift <= '0';
             end if;
 
             ------------------
