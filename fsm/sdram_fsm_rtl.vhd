@@ -76,8 +76,11 @@ architecture rtl of SdramFsm is
         LOAD_WRITE_SHIFT_REG,
         START_WRITE_OP,
         WRITING,
-
+        
+        DECREMENT_WORDS64_COUNTER,
+        CHECK_REQUEST_DONE,
         PREPARE_RESPONSE,
+        WREN_RESPONSE_DATA_FIFO,
         WREN_RESPONSE_CMD_FIFO
     );
 
@@ -141,7 +144,7 @@ architecture rtl of SdramFsm is
     signal response_command_r : std_logic_vector(19 downto 0);
 
 
-    -- signal response_data_wren_r : std_logic;
+    signal response_data_wren_r : std_logic;
     signal response_data_r    : std_logic_vector(63 downto 0);
 
 ------------------------------------------------------
@@ -259,7 +262,7 @@ begin
     response_command_fifo_wren <= response_command_wren_r;
     response_command_fifo_data <= response_command_r;
    
-    response_data_fifo_wren    <= '0'; -- Пока что
+    response_data_fifo_wren    <= response_data_wren_r;
     response_data_fifo_data    <= response_data_r; 
 
 ------------------------------------------------------
@@ -562,7 +565,7 @@ begin
                 ------------------
                 when UNLOAD_READ_SHIFT_REG =>
                     if response_data_fifo_full = '0' then
-                        fifo_fsm_state <= PREPARE_REQUEST;
+                        fifo_fsm_state <= DECREMENT_WORDS64_COUNTER;
                     end if;
 ------------------------------------------------
 
@@ -590,14 +593,34 @@ begin
                 ------------------
                 when WRITING =>
                     if op_active_r = '0' then
-                        fifo_fsm_state <= PREPARE_REQUEST;
+                        fifo_fsm_state <= DECREMENT_WORDS64_COUNTER;
                     end if;
 ------------------------------------------------
+
+                ------------------
+                -- DECREMENT_WORDS64_COUNTER
+                ------------------
+                when DECREMENT_WORDS64_COUNTER =>
+                    fifo_fsm_state <= CHECK_REQUEST_DONE;
+
+                ------------------
+                -- CHECK_REQUEST_DONE
+                ------------------
+                when CHECK_REQUEST_DONE =>
+                    fifo_fsm_state <= PREPARE_REQUEST;
 
                ------------------
                 -- PREPARE_RESPONSE
                 ------------------
                 when PREPARE_RESPONSE =>
+                    if response_data_fifo_full = '0' then
+                        fifo_fsm_state <= WREN_RESPONSE_DATA_FIFO;
+                    end if;
+
+                ------------------
+                -- WREN_RESPONSE_DATA_FIFO
+                ------------------
+                when WREN_RESPONSE_DATA_FIFO =>
                     if response_command_fifo_full = '0' then
                         fifo_fsm_state <= WREN_RESPONSE_CMD_FIFO;
                     end if;
@@ -606,9 +629,8 @@ begin
                 -- WREN_RESPONSE_CMD_FIFO
                 ------------------
                 when WREN_RESPONSE_CMD_FIFO =>
-                    if response_command_fifo_full = '0' then
-                        fifo_fsm_state <= IDLE;
-                    end if;
+                    fifo_fsm_state <= IDLE;
+
             end case;
         end if;
     end process fifo_fsm_proc;
@@ -670,7 +692,7 @@ begin
             ------------------
             -- response_command_wren_r
             ------------------
-            if fifo_fsm_state = PREPARE_RESPONSE and response_command_fifo_full = '0' then
+            if fifo_fsm_state = WREN_RESPONSE_DATA_FIFO and response_command_fifo_full = '0' then
                 response_command_wren_r <= '1';
             else
                 response_command_wren_r <= '0';
@@ -679,11 +701,26 @@ begin
             ------------------
             -- response_command_r
             ------------------
-            if fifo_fsm_state = PREPARE_RESPONSE then
+            if fifo_fsm_state = prepare_response then
                 response_command_r(19 downto 8) <= words64_r;
                 response_command_r(7  downto 0) <= op_id_r;
             end if;
-            
+
+            ------------------
+            -- response_data_wren_r
+            ------------------
+            if fifo_fsm_state = PREPARE_RESPONSE and response_data_fifo_full = '0' then
+                response_data_wren_r <= '1';
+            else
+                response_data_wren_r <= '0';
+            end if;
+
+            ------------------
+            -- response_data_r
+            ------------------
+--            if fifo_fsm_state = prepare_response then
+                --
+--            end if;            
 
             ------------------
             -- op_type_r
@@ -778,7 +815,7 @@ begin
             ------------------
             -- request_done_r
             ------------------
-            if fifo_fsm_state = WRITING and op_active_r = '0' and 
+            if fifo_fsm_state = CHECK_REQUEST_DONE and 
             words64_counter = conv_std_logic_vector(0, words64_counter'length) then
                 request_done_r <= '1';
             else
@@ -801,7 +838,7 @@ begin
                 if first_prepare_done_r = '0' then
                     words64_counter <= words64;
                 end if;
-            elsif fifo_fsm_state = LOAD_WRITE_SHIFT_REG then
+            elsif fifo_fsm_state = DECREMENT_WORDS64_COUNTER then
                 if words64_counter /= conv_std_logic_vector(0, words64_counter'length) then
                     words64_counter <= words64_counter - 1;
                 end if;
