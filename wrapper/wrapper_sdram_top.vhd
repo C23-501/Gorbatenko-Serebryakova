@@ -91,16 +91,13 @@ architecture rtl of SdramTopWrapper is
     ----------------------------------------------------------------
     -- Sequencer
     ----------------------------------------------------------------
-    type t_state is (ST_WAIT, ST_WR_CMD, ST_WR_DATA, ST_WAIT2, ST_RD_CMD, ST_DONE);
+    type t_state is (ST_INIT, ST_WAIT1, ST_WR_CMD, ST_WR_DATA, ST_WAIT2, ST_RD_CMD, ST_DONE);
     signal st : t_state;
 
-    signal wait_cnt : std_logic_vector(23 downto 0);
+    signal wait_cnt : std_logic_vector(9 downto 0);
 
-    constant INIT_WAIT : std_logic_vector(23 downto 0) :=
-        conv_std_logic_vector(120000, 24);
-
-    constant GAP_WAIT  : std_logic_vector(23 downto 0) :=
-        conv_std_logic_vector(12000, 24);
+    constant C_WAIT  : std_logic_vector(9 downto 0) :=
+        conv_std_logic_vector(800, 10);
 
     ----------------------------------------------------------------
     -- Activity signals
@@ -108,6 +105,12 @@ architecture rtl of SdramTopWrapper is
     signal wrapper_running_s : std_logic;
     signal fsm_active_s      : std_logic;
     signal resp_valid_s      : std_logic;
+
+    -- registered (clk80 domain) control pulses
+    signal req_cmd_wrreq_r   : std_logic := '0';
+    signal req_data_wrreq_r  : std_logic := '0';
+    signal resp_cmd_rdreq_r  : std_logic := '0';
+    signal resp_data_rdreq_r : std_logic := '0';
 
 begin
 
@@ -200,71 +203,99 @@ begin
         );
 
     ----------------------------------------------------------------
-    -- Simple command generator
+    -- Simple command generator (FIFO handshakes MUST be synchronous to CLK_80MHz_o)
     ----------------------------------------------------------------
-    req_cmd_wrreq  <= '1' when (st = ST_WR_CMD or st = ST_RD_CMD) else '0';
-    req_data_wrreq <= '1' when (st = ST_WR_DATA) else '0';
+    req_cmd_wrreq  <= req_cmd_wrreq_r;
+    req_data_wrreq <= req_data_wrreq_r;
 
     req_cmd_wdata  <= CMD_WRITE_1W64 when (st = ST_WR_CMD) else
                       CMD_READ_1W64  when (st = ST_RD_CMD) else
                       (others => '0');
 
-    req_data_wdata <= DATA_WRITE_64 when (st = ST_WR_DATA) else
-                      (others => '0');
+    req_data_wdata <= DATA_WRITE_64;
 
-    resp_cmd_rdreq  <= not resp_cmd_rdempty;
-    resp_data_rdreq <= not resp_data_rdempty;
+    -- Read responses on 80 MHz domain (registered)
+    resp_cmd_rdreq  <= resp_cmd_rdreq_r;
+    resp_data_rdreq <= resp_data_rdreq_r;
 
     ----------------------------------------------------------------
     -- Sequencer
+
     ----------------------------------------------------------------
-    process(nRst, CLK_12MHz)
+    process(nRst, CLK_80MHz_o)
     begin
         if nRst = '0' then
-            st       <= ST_WAIT;
-            wait_cnt <= (others => '0');
+            st <= ST_INIT;
 
-        elsif rising_edge(CLK_12MHz) then
+        elsif rising_edge(CLK_80MHz_o) then
             case st is
 
-                when ST_WAIT =>
-                    if wait_cnt = 0 then
-                        wait_cnt <= INIT_WAIT;
-                    else
-                        wait_cnt <= wait_cnt - 1;
-                        if wait_cnt = 1 then
-                            st <= ST_WR_CMD;
-                        end if;
-                    end if;
+                when ST_INIT =>
+                    st <= ST_WAIT1;
 
-                when ST_WR_CMD =>
-                    if req_cmd_wrfull = '0' then
+                when ST_WAIT1 =>
+                    if wait_cnt = conv_std_logic_vector(0, wait_cnt'length) then
                         st <= ST_WR_DATA;
                     end if;
 
                 when ST_WR_DATA =>
-                    if req_data_wrfull = '0' then
-                        wait_cnt <= GAP_WAIT;
-                        st <= ST_WAIT2;
-                    end if;
+                    st <= ST_WR_CMD;
+
+                when ST_WR_CMD =>
+                    st <= ST_WAIT2;
 
                 when ST_WAIT2 =>
-                    if wait_cnt = 0 then
+                    if wait_cnt = conv_std_logic_vector(0, wait_cnt'length) then
                         st <= ST_RD_CMD;
-                    else
-                        wait_cnt <= wait_cnt - 1;
                     end if;
 
                 when ST_RD_CMD =>
-                    if req_cmd_wrfull = '0' then
-                        st <= ST_DONE;
-                    end if;
+                    st <= ST_DONE;
 
-                when others =>
+                when ST_DONE =>
                     st <= ST_DONE;
 
             end case;
         end if;
     end process;
+
+    process(nRst, CLK_80MHz_o)
+    begin
+        if nRst = '0' then
+            wait_cnt <= (others => '0');
+
+            req_cmd_wrreq_r   <= '0';
+            req_data_wrreq_r  <= '0';
+            resp_cmd_rdreq_r  <= '0';
+            resp_data_rdreq_r <= '0';
+
+        elsif rising_edge(CLK_80MHz_o) then
+            -- pull responses when available (80 MHz domain)
+            resp_cmd_rdreq_r  <= not resp_cmd_rdempty;
+            resp_data_rdreq_r <= not resp_data_rdempty;
+
+            if st = ST_INIT then
+                wait_cnt <= C_WAIT;
+            elsif st = ST_WR_CMD then
+                wait_cnt <= C_WAIT;
+            elsif wait_cnt /= conv_std_logic_vector(0, wait_cnt'length) then
+                wait_cnt <= wait_cnt - 1;
+            end if;
+
+            if st = ST_WAIT1 and wait_cnt = conv_std_logic_vector(0, wait_cnt'length) then
+                req_data_wrreq_r <= '1';
+            else
+                req_data_wrreq_r <= '0';
+            end if;
+
+            if st = ST_WR_DATA then
+                req_cmd_wrreq_r <= '1';
+            elsif st = ST_WAIT2 and wait_cnt = conv_std_logic_vector(0, wait_cnt'length) then
+                req_cmd_wrreq_r <= '0';
+            end if;
+
+        end if;
+    end process;
+
 
 end architecture;

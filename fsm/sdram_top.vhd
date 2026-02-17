@@ -55,11 +55,9 @@ entity SdramTop is
         response_data_fifo_write_en    : out std_logic;
         response_data_fifo_data        : out std_logic_vector(63 downto 0);
 
-        -- LEDs
         LED_ctr : out std_logic_vector(7 downto 0)
     );
 end SdramTop;
-
 
 architecture rtl of SdramTop is
 
@@ -82,7 +80,6 @@ architecture rtl of SdramTop is
     signal nWE_FSM     : std_logic;
     signal nWE_Subsys  : std_logic;
 
-    -- LED
     signal LED_counter  : std_logic_vector(23 downto 0);
     signal LED_quarters : std_logic_vector(1 downto 0);
     signal LED_r        : std_logic_vector(7 downto 0);
@@ -96,12 +93,10 @@ architecture rtl of SdramTop is
     signal CLK_160MHz : std_logic;
     signal CLK_80MHz  : std_logic;
 
-    signal PLL_reset     : std_logic;
-    signal pll_lock_160  : std_logic;
-    signal pll_lock_80   : std_logic;
-    signal nRst_global   : std_logic;
+    signal PLL_reset    : std_logic;
+    signal pll_locked   : std_logic;
+    signal nRst_global  : std_logic;
 
-    -- request (FIFO q/empty/full)
     signal req_cmd_q      : std_logic_vector(61 downto 0);
     signal req_cmd_empty  : std_logic;
     signal req_cmd_full_s : std_logic;
@@ -110,7 +105,6 @@ architecture rtl of SdramTop is
     signal req_data_empty  : std_logic;
     signal req_data_full_s : std_logic;
 
-    -- response (FIFO q/empty/full)
     signal resp_cmd_q       : std_logic_vector(19 downto 0);
     signal resp_cmd_empty_s : std_logic;
     signal resp_cmd_full_s  : std_logic;
@@ -119,20 +113,15 @@ architecture rtl of SdramTop is
     signal resp_data_empty_s : std_logic;
     signal resp_data_full_s  : std_logic;
 
-    -- rdreq от FSM 
     signal req_cmd_rdreq_s  : std_logic;
     signal req_data_rdreq_s : std_logic;
 
-    -- wren/wdata от FSM 
     signal resp_cmd_wren_s  : std_logic;
     signal resp_cmd_wdata_s : std_logic_vector(19 downto 0);
 
     signal resp_data_wren_s  : std_logic;
     signal resp_data_wdata_s : std_logic_vector(63 downto 0);
 
-    --------------------------------------------------------------------
-    -- COMPONENT объявления
-    --------------------------------------------------------------------
     component SdramArbiter
         port (
             nRst        : in  std_logic;
@@ -193,21 +182,13 @@ architecture rtl of SdramTop is
         );
     end component;
 
-    component PLL_i12MHz_o160MHz
+    component PLL_i12MHz_o80MHz_o160MHz
         port (
-            areset : in  std_logic := '0';
-            inclk0 : in  std_logic := '0';
-            c0     : out std_logic;
-            locked : out std_logic
-        );
-    end component;
-
-    component PLL_i12MHz_o80MHz
-        port (
-            areset : in  std_logic := '0';
-            inclk0 : in  std_logic := '0';
-            c0     : out std_logic;
-            locked : out std_logic
+            areset  : in  std_logic := '0';
+            inclk0  : in  std_logic := '0';
+            c0      : out std_logic;  -- 80MHz 
+            c1      : out std_logic;  -- 160MHz
+            locked  : out std_logic
         );
     end component;
 
@@ -300,31 +281,22 @@ architecture rtl of SdramTop is
     end component;
 
 begin
+
     CLK_160MHz_o <= CLK_160MHz;
     CLK_80MHz_o  <= CLK_80MHz;
 
-    ----------------------------------------------------------------
-    -- PLL / reset
-    ----------------------------------------------------------------
     PLL_reset <= not nRst;
 
-    U_PLL160 : PLL_i12MHz_o160MHz
-        port map (
-            areset => PLL_reset,
-            inclk0 => CLK_12MHz,
-            c0     => CLK_160MHz,
-            locked => pll_lock_160
-        );
-
-    U_PLL80 : PLL_i12MHz_o80MHz
+    U_PLL : PLL_i12MHz_o80MHz_o160MHz
         port map (
             areset => PLL_reset,
             inclk0 => CLK_12MHz,
             c0     => CLK_80MHz,
-            locked => pll_lock_80
+            c1     => CLK_160MHz,
+            locked => pll_locked
         );
 
-    nRst_global <= nRst and pll_lock_160 and pll_lock_80;
+    nRst_global <= nRst and pll_locked;
 
     nCS_o  <= nCS_s;
     nCAS_o <= nCAS_s;
@@ -338,18 +310,15 @@ begin
 
     LED_ctr <= LED_r;
 
-    request_command_fifo_read_en   <= req_cmd_rdreq_s;
-    request_data_fifo_read_en      <= req_data_rdreq_s;
+    request_command_fifo_read_en <= req_cmd_rdreq_s;
+    request_data_fifo_read_en    <= req_data_rdreq_s;
 
     response_command_fifo_write_en <= resp_cmd_wren_s;
     response_command_fifo_data     <= resp_cmd_wdata_s;
 
-    response_data_fifo_write_en    <= resp_data_wren_s;
-    response_data_fifo_data        <= resp_data_wdata_s;
+    response_data_fifo_write_en <= resp_data_wren_s;
+    response_data_fifo_data     <= resp_data_wdata_s;
 
-    ----------------------------------------------------------------
-    -- Request FIFOs: write @ 80MHz, read @ 160MHz (FSM)
-    ----------------------------------------------------------------
     U_REQ_CMD_FIFO : request_cmd_fifo
         port map (
             data    => req_cmd_wdata,
@@ -377,9 +346,6 @@ begin
     req_cmd_wrfull  <= req_cmd_full_s;
     req_data_wrfull <= req_data_full_s;
 
-    ----------------------------------------------------------------
-    -- Response FIFOs: write @ 160MHz (FSM), read @ 80MHz 
-    ----------------------------------------------------------------
     U_RESP_CMD_FIFO : response_cmd_fifo
         port map (
             data    => resp_cmd_wdata_s,
@@ -418,7 +384,6 @@ begin
             state_subsys => State_out,
             state_fsm    => StateFSM,
 
-            -- request reads (FSM -> rdreq_s, FIFO -> data/empty)
             request_command_fifo_rden  => req_cmd_rdreq_s,
             request_command_fifo_data  => req_cmd_q,
             request_command_fifo_empty => req_cmd_empty,
@@ -427,7 +392,6 @@ begin
             request_data_fifo_data  => req_data_q,
             request_data_fifo_empty => req_data_empty,
 
-            -- response writes (FSM -> wren/wdata_s, FIFO -> full)
             response_command_fifo_wren => resp_cmd_wren_s,
             response_command_fifo_data => resp_cmd_wdata_s,
             response_command_fifo_full => resp_cmd_full_s,
@@ -436,7 +400,6 @@ begin
             response_data_fifo_data => resp_data_wdata_s,
             response_data_fifo_full => resp_data_full_s,
 
-            -- SDRAM signals
             nCS  => nCS_FSM,
             nRAS => nRAS_FSM,
             nCAS => nCAS_FSM,

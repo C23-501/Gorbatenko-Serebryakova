@@ -4,7 +4,7 @@
 -- MODULE: altpll 
 
 -- ============================================================
--- File Name: PLL_i12MHz_o160MHz.vhd
+-- File Name: PLL_i12MHz_o80MHz_o160MHz.vhd
 -- Megafunction Name(s):
 -- 			altpll
 --
@@ -40,7 +40,7 @@ USE ieee.std_logic_1164.all;
 LIBRARY altera_mf;
 USE altera_mf.all;
 
-ENTITY PLL_i12MHz_o160MHz IS
+ENTITY PLL_i12MHz_o80MHz_o160MHz IS
 	PORT
 	(
 		areset		: IN STD_LOGIC  := '0';
@@ -49,10 +49,10 @@ ENTITY PLL_i12MHz_o160MHz IS
 		c1		: OUT STD_LOGIC ;
 		locked		: OUT STD_LOGIC 
 	);
-END PLL_i12MHz_o160MHz;
+END PLL_i12MHz_o80MHz_o160MHz;
 
 
-ARCHITECTURE SYN OF pll_i12mhz_o160mhz IS
+ARCHITECTURE SYN OF pll_i12mhz_o80mhz_o160mhz IS
 
 	SIGNAL sub_wire0	: STD_LOGIC_VECTOR (4 DOWNTO 0);
 	SIGNAL sub_wire1	: STD_LOGIC ;
@@ -160,7 +160,7 @@ BEGIN
 		compensate_clock => "CLK0",
 		inclk0_input_frequency => 83333,
 		intended_device_family => "Cyclone 10 LP",
-		lpm_hint => "CBX_MODULE_PREFIX=PLL_i12MHz_o160MHz",
+		lpm_hint => "CBX_MODULE_PREFIX=PLL_i12MHz_o80MHz_o160MHz",
 		lpm_type => "altpll",
 		operation_mode => "NORMAL",
 		pll_type => "AUTO",
@@ -294,7 +294,7 @@ END SYN;
 -- Retrieval info: PRIVATE: PLL_PFDENA_CHECK STRING "0"
 -- Retrieval info: PRIVATE: PLL_TARGET_HARCOPY_CHECK NUMERIC "0"
 -- Retrieval info: PRIVATE: PRIMARY_CLK_COMBO STRING "inclk0"
--- Retrieval info: PRIVATE: RECONFIG_FILE STRING "PLL_i12MHz_o160MHz.mif"
+-- Retrieval info: PRIVATE: RECONFIG_FILE STRING "PLL_i12MHz_o80MHz_o160MHz.mif"
 -- Retrieval info: PRIVATE: SACN_INPUTS_CHECK STRING "0"
 -- Retrieval info: PRIVATE: SCAN_FEATURE_ENABLED STRING "1"
 -- Retrieval info: PRIVATE: SELF_RESET_LOCK_LOSS STRING "0"
@@ -388,11 +388,11 @@ END SYN;
 -- Retrieval info: CONNECT: c0 0 0 0 0 @clk 0 0 1 0
 -- Retrieval info: CONNECT: c1 0 0 0 0 @clk 0 0 1 1
 -- Retrieval info: CONNECT: locked 0 0 0 0 @locked 0 0 0 0
--- Retrieval info: GEN_FILE: TYPE_NORMAL PLL_i12MHz_o160MHz.vhd TRUE
--- Retrieval info: GEN_FILE: TYPE_NORMAL PLL_i12MHz_o160MHz.ppf TRUE
--- Retrieval info: GEN_FILE: TYPE_NORMAL PLL_i12MHz_o160MHz.inc FALSE
--- Retrieval info: GEN_FILE: TYPE_NORMAL PLL_i12MHz_o160MHz.cmp TRUE
--- Retrieval info: GEN_FILE: TYPE_NORMAL PLL_i12MHz_o160MHz.bsf FALSE
--- Retrieval info: GEN_FILE: TYPE_NORMAL PLL_i12MHz_o160MHz_inst.vhd FALSE
+-- Retrieval info: GEN_FILE: TYPE_NORMAL PLL_i12MHz_o80MHz_o160MHz.vhd TRUE
+-- Retrieval info: GEN_FILE: TYPE_NORMAL PLL_i12MHz_o80MHz_o160MHz.ppf TRUE
+-- Retrieval info: GEN_FILE: TYPE_NORMAL PLL_i12MHz_o80MHz_o160MHz.inc FALSE
+-- Retrieval info: GEN_FILE: TYPE_NORMAL PLL_i12MHz_o80MHz_o160MHz.cmp TRUE
+-- Retrieval info: GEN_FILE: TYPE_NORMAL PLL_i12MHz_o80MHz_o160MHz.bsf FALSE
+-- Retrieval info: GEN_FILE: TYPE_NORMAL PLL_i12MHz_o80MHz_o160MHz_inst.vhd FALSE
 -- Retrieval info: LIB_FILE: altera_mf
 -- Retrieval info: CBX_MODULE_PREFIX: ON

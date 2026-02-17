@@ -24,7 +24,7 @@
 *                IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR
 *                A PARTICULAR PURPOSE, OR AGAINST INFRINGEMENT.
 *
-*                Copyright © 2001 Micron Semiconductor Products, Inc.
+*                Copyright ï¿½ 2001 Micron Semiconductor Products, Inc.
 *                All rights researved
 *
 * Rev  Author          Date        Changes
@@ -1047,7 +1047,7 @@ module mt48lc4m16a2 (Dq, Addr, Ba, Clk, Cke, Cs_n, Ras_n, Cas_n, We_n, Dqm);
             tAS  =  1.5,                                        // Addr, Ba Setup Time
             tCH  =  2.5,                                        // Clock High-Level Width
             tCL  =  2.5,                                        // Clock Low-Level Width
-            tCK  =  7.0,                                        // Clock Cycle Time
+            tCK  =  6.0,                                        // Clock Cycle Time
             tDH  =  0.8,                                        // Data-in Hold Time
             tDS  =  1.5,                                        // Data-in Setup Time
             tCKH =  0.8,                                        // CKE Hold  Time
