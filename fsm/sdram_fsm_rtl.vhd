@@ -56,7 +56,10 @@ entity SdramFsm is
         DQ   : inout std_logic_vector(15 downto 0);
         DQM  : out   std_logic_vector(1 downto 0);
         BS   : out   std_logic_vector(1 downto 0);
-        A    : out   std_logic_vector(11 downto 0)
+        A    : out   std_logic_vector(11 downto 0);
+
+        rd_load_out : out std_logic;
+        wr_shift_out : out std_logic
     );
 end SdramFsm;
 
@@ -318,6 +321,13 @@ begin
 
     read_sreg_load <= '1' when (sdram_fsm_state = READING) else '0';
     write_sreg_shift <= '1' when (sdram_fsm_state = WRITING) else '0';
+
+------------------------------------------------------
+            -- DEBUG
+------------------------------------------------------
+    
+    rd_load_out <= '1' when (sdram_fsm_state = READING) else '0';
+    wr_shift_out <= '1' when (sdram_fsm_state = WRITING) else '0';
 
 
     sdram_fsm_proc : process(clk, nRst)

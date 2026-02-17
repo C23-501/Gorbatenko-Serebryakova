@@ -29,15 +29,16 @@ entity SdramTopWrapper is
         DQ0_DBG        : out std_logic;
         FSM_ACTIVE_DBG : out std_logic;
         RESP_VALID_DBG : out std_logic;
-        WREN           : out std_logic
+        WREN           : out std_logic;
+
+        RD_LOAD_DBG  : out std_logic;
+        WR_SHIFT_DBG : out std_logic;
+        CLK_160MHz_DBG : out std_logic
     );
 end entity;
 
 architecture rtl of SdramTopWrapper is
 
-    ----------------------------------------------------------------
-    -- Test command constants
-    ----------------------------------------------------------------
     constant C_BANK   : std_logic_vector(1 downto 0)  := "00";
     constant C_ROW    : std_logic_vector(11 downto 0) := x"012";
     constant C_COL    : std_logic_vector(7 downto 0)  := x"34";
@@ -55,9 +56,6 @@ architecture rtl of SdramTopWrapper is
     constant CMD_READ_1W64 : std_logic_vector(61 downto 0) :=
         '0' & "000" & C_BANK & C_ROW & C_COL & C_WORDS1 & C_BE_ALL & C_BE_ALL & C_OPID_R;
 
-    ----------------------------------------------------------------
-    -- Internal nets
-    ----------------------------------------------------------------
     signal nCS_s, nRAS_s, nCAS_s, nWE_s : std_logic;
     signal CKE_s : std_logic;
     signal DQM_s : std_logic_vector(1 downto 0);
@@ -88,9 +86,9 @@ architecture rtl of SdramTopWrapper is
     signal response_command_fifo_write_en : std_logic;
     signal response_data_fifo_write_en    : std_logic;
 
-    ----------------------------------------------------------------
-    -- Sequencer
-    ----------------------------------------------------------------
+    signal rd_load_dbg_s  : std_logic;
+    signal wr_shift_dbg_s : std_logic;
+
     type t_state is (ST_INIT, ST_WAIT1, ST_WR_CMD, ST_WR_DATA, ST_WAIT2, ST_RD_CMD, ST_DONE);
     signal st : t_state;
 
@@ -99,14 +97,10 @@ architecture rtl of SdramTopWrapper is
     constant C_WAIT  : std_logic_vector(9 downto 0) :=
         conv_std_logic_vector(800, 10);
 
-    ----------------------------------------------------------------
-    -- Activity signals
-    ----------------------------------------------------------------
     signal wrapper_running_s : std_logic;
     signal fsm_active_s      : std_logic;
     signal resp_valid_s      : std_logic;
 
-    -- registered (clk80 domain) control pulses
     signal req_cmd_wrreq_r   : std_logic := '0';
     signal req_data_wrreq_r  : std_logic := '0';
     signal resp_cmd_rdreq_r  : std_logic := '0';
@@ -135,7 +129,7 @@ begin
     WREN <= req_cmd_wrreq;
 
     ----------------------------------------------------------------
-    -- FSM activity detection (SAFE VHDL)
+    -- FSM activity detection
     ----------------------------------------------------------------
     wrapper_running_s <= '1' when (st /= ST_DONE) else '0';
 
@@ -150,9 +144,11 @@ begin
     resp_valid_s <= (not resp_cmd_rdempty) or (not resp_data_rdempty);
     RESP_VALID_DBG <= resp_valid_s;
 
-    ----------------------------------------------------------------
-    -- Instantiate SdramTop
-    ----------------------------------------------------------------
+    RD_LOAD_DBG <= rd_load_dbg_s;
+    WR_SHIFT_DBG <= wr_shift_dbg_s;
+
+    CLK_160MHz_DBG <= CLK_160MHz_o;
+
     U_TOP : entity work.SdramTop
         port map (
             nRst      => nRst,
@@ -199,12 +195,12 @@ begin
             response_data_fifo_write_en    => response_data_fifo_write_en,
             response_data_fifo_data        => open,
 
+            rd_load_out => rd_load_dbg_s,
+            wr_shift_out => wr_shift_dbg_s,
+
             LED_ctr => open
         );
 
-    ----------------------------------------------------------------
-    -- Simple command generator (FIFO handshakes MUST be synchronous to CLK_80MHz_o)
-    ----------------------------------------------------------------
     req_cmd_wrreq  <= req_cmd_wrreq_r;
     req_data_wrreq <= req_data_wrreq_r;
 
@@ -218,10 +214,7 @@ begin
     resp_cmd_rdreq  <= resp_cmd_rdreq_r;
     resp_data_rdreq <= resp_data_rdreq_r;
 
-    ----------------------------------------------------------------
-    -- Sequencer
 
-    ----------------------------------------------------------------
     process(nRst, CLK_80MHz_o)
     begin
         if nRst = '0' then
@@ -270,7 +263,6 @@ begin
             resp_data_rdreq_r <= '0';
 
         elsif rising_edge(CLK_80MHz_o) then
-            -- pull responses when available (80 MHz domain)
             resp_cmd_rdreq_r  <= not resp_cmd_rdempty;
             resp_data_rdreq_r <= not resp_data_rdempty;
 

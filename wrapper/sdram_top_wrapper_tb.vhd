@@ -27,6 +27,15 @@ architecture tb of SdramTopWrapperTb is
     signal nCAS_DBG : std_logic;
     signal nWE_DBG  : std_logic;
 
+    signal DQ0_DBG        : std_logic;
+    signal FSM_ACTIVE_DBG : std_logic;
+    signal RESP_VALID_DBG : std_logic;
+    signal WREN           : std_logic;
+
+    signal RD_LOAD_DBG    : std_logic;
+    signal WR_SHIFT_DBG   : std_logic;
+    signal CLK_160MHz_DBG : std_logic;
+
     constant TCLK : time := 83.333 ns; -- 12 MHz
 
 begin
@@ -50,7 +59,7 @@ begin
     p_rst : process
     begin
         nRst <= '0';
-        wait for 2 us;     -- держим ресет
+        wait for 2 us; 
         nRst <= '1';
         wait;
     end process;
@@ -76,13 +85,18 @@ begin
             nCS_DBG  => nCS_DBG,
             nRAS_DBG => nRAS_DBG,
             nCAS_DBG => nCAS_DBG,
-            nWE_DBG  => nWE_DBG
+            nWE_DBG  => nWE_DBG,
+
+            DQ0_DBG        => DQ0_DBG,
+            FSM_ACTIVE_DBG => FSM_ACTIVE_DBG,
+            RESP_VALID_DBG => RESP_VALID_DBG,
+            WREN           => WREN,
+
+            RD_LOAD_DBG    => RD_LOAD_DBG,
+            WR_SHIFT_DBG   => WR_SHIFT_DBG,
+            CLK_160MHz_DBG => CLK_160MHz_DBG
         );
 
-    --------------------------------------------------------------------
-    -- SDRAM model stub: пока памяти нет — линия данных в Z
-    -- (важно: так tb НЕ конфликтует с драйвером из DUT)
-    --------------------------------------------------------------------
     Dq <= (others => 'Z');
 
 

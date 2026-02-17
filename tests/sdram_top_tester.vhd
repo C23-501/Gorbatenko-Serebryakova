@@ -148,11 +148,10 @@ architecture flow of SdramTopTester is
         variable i      : integer;
         variable nib    : std_logic_vector(3 downto 0);
     begin
-        -- align slv into LSB of padded
         padded(slv'length-1 downto 0) := slv;
 
         for k in 0 to N-1 loop
-            i   := N - k; -- string index (1..N)
+            i   := N - k; 
             nib := padded(k*4+3 downto k*4);
             res(i) := nibble_to_char(nib);
         end loop;

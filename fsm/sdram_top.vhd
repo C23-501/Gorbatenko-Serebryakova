@@ -55,6 +55,9 @@ entity SdramTop is
         response_data_fifo_write_en    : out std_logic;
         response_data_fifo_data        : out std_logic_vector(63 downto 0);
 
+        rd_load_out : out std_logic;
+        wr_shift_out : out std_logic;
+
         LED_ctr : out std_logic_vector(7 downto 0)
     );
 end SdramTop;
@@ -84,6 +87,9 @@ architecture rtl of SdramTop is
     signal LED_quarters : std_logic_vector(1 downto 0);
     signal LED_r        : std_logic_vector(7 downto 0);
     signal quarter_flag : std_logic;
+
+    signal wr_shift_s : std_logic;
+    signal rd_load_s  : std_logic;
 
     signal nCS_s  : std_logic;
     signal nCAS_s : std_logic;
@@ -121,6 +127,9 @@ architecture rtl of SdramTop is
 
     signal resp_data_wren_s  : std_logic;
     signal resp_data_wdata_s : std_logic_vector(63 downto 0);
+
+    signal rd_load_out_s : std_logic;
+    signal wr_shift_out_s : std_logic;
 
     component SdramArbiter
         port (
@@ -224,7 +233,10 @@ architecture rtl of SdramTop is
             DQ   : inout std_logic_vector(15 downto 0);
             DQM  : out std_logic_vector(1 downto 0);
             BS   : out std_logic_vector(1 downto 0);
-            A    : out std_logic_vector(11 downto 0)
+            A    : out std_logic_vector(11 downto 0);
+
+            rd_load_out : out std_logic;
+            wr_shift_out : out std_logic
         );
     end component;
 
@@ -319,6 +331,9 @@ begin
     response_data_fifo_write_en <= resp_data_wren_s;
     response_data_fifo_data     <= resp_data_wdata_s;
 
+    rd_load_out <= rd_load_out_s;
+    wr_shift_out <= wr_shift_out_s;
+
     U_REQ_CMD_FIFO : request_cmd_fifo
         port map (
             data    => req_cmd_wdata,
@@ -408,7 +423,10 @@ begin
             DQ   => Dq,
             DQM  => DQM_FSM,
             BS   => BS_FSM,
-            A    => A_FSM
+            A    => A_FSM,
+
+            rd_load_out => rd_load_out_s,
+            wr_shift_out => wr_shift_out_s
         );
 
     U_0 : SdramSubsys
